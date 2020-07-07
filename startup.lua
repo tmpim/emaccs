@@ -1,11 +1,21 @@
 local input, input_file = {}
 
+local write = write
+
+if not write then
+  function write(x)
+    return io.write(tostring(x))
+  end
+end
+
 local function getchar()
   if #input >= 1 then
     local c = table.remove(input, 1)
     return c
   elseif input_file then
     return input_file:read(1)
+  elseif not _CC_DEFAULT_SETTINGS then
+    return io.read(1)
   else
     while true do
       local ev, c = coroutine.yield()
@@ -32,7 +42,7 @@ local function skip_spaces()
     while ch ~= '\n' do
       ch = getchar()
     end
-    return getchar()
+    return skip_spaces()
   end
   return ch
 end
@@ -48,7 +58,7 @@ local function read_number(acc)
 end
 
 local symbol_chars = {
-  ['+'] = true, ['-'] = true, ['?'] = true, ['!'] = true
+  ['+'] = true, ['-'] = true, ['?'] = true, ['!'] = true, ['='] = true
 }
 
 local function symbol_carp(ch)
@@ -236,6 +246,7 @@ local function scm_print(e)
     elseif consp(e) then
       write '('
       repeat
+        scm_print(e[1])
         if consp(e[2]) then
           write ' '
         end
@@ -266,8 +277,9 @@ local function is_self_eval(e)
 end
 
 function eval(expr, env, okk, errk)
+  assert(errk)
   if symbolp(expr) and expr[1] ~= '' then
-    if env[expr[1]] then
+    if env[expr[1]] ~= nil then
       return okk(env[expr[1]])
     else
       return errk('no binding for symbol ' .. expr[1])
@@ -278,15 +290,13 @@ function eval(expr, env, okk, errk)
     end
     return okk({[0]=eval,expr[2][1],env,expr[2][2]})
   elseif consp(expr) and expr[1] == _if then
-    return eval(expr[2], env, function(c)
-      if c then
-        return eval(expr[2][1], env, okk, errk)
+    return eval(expr[2][1], env, function(c)
+      if c ~= false and c ~= scm_nil then
+        return eval(expr[2][2][1], env, okk, errk)
+      elseif expr[2][2][2] == scm_nil then
+        return okk(false)
       else
-        if expr[2][2] == scm_nil then
-          return kont(false)
-        else
-          return eval(expr[2][2][1], env, okk, errk)
-        end
+        return eval(expr[2][2][2][1], env, okk, errk)
       end
     end, errk)
   elseif consp(expr) and expr[1] == _define then
@@ -295,6 +305,8 @@ function eval(expr, env, okk, errk)
         env[expr[2][1][1]] = x
         return okk(x)
       end, errk)
+    elseif consp(expr[2]) and consp(expr[2][1]) and consp(expr[2][2]) then
+      return eval({ _define, { expr[2][1][1], { { _lambda, { expr[2][1][2], expr[2][2] } }, scm_nil } } }, env, okk, errk)
     else
       return errk('invalid define expression')
     end
@@ -303,7 +315,11 @@ function eval(expr, env, okk, errk)
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
       return apply_dispatch(f, expr[2], env, okk, errk)
-    end, errk)
+    end, function(e)
+      scm_print(expr)
+      print()
+      return errk(e)
+    end)
   elseif is_self_eval(expr) then
     return okk(expr)
   else
@@ -329,7 +345,7 @@ local function make_env(a, b, t)
       return make_env(a[2], b[2], t)
     end
   elseif symbolp(a) then
-    t[a[1]] = b[1]
+    t[a[1]] = b
   end
   return t
 end
@@ -416,7 +432,9 @@ local function load(okk, errk, env, path)
             input_file = h
             return load_loop(i + 1)
           end, errk)
-        end, errk)
+        end, function(e)
+          return errk(e .. ' in the ' .. tostring(i))
+        end)
       elseif err == scm_eof then
         input_file = nil
         h:close()
@@ -429,6 +447,17 @@ local function load(okk, errk, env, path)
     end
     return load_loop(0)
   end
+end
+
+local function scm_eq(a, b)
+  if a == b then
+    return true
+  elseif consp(a) and consp(b) then
+      return scm_eq(a[1]) and scm_eq(a[2])
+  elseif type(a) == 'table' and (a[0] == eval or a[0] == callproc) then
+    return false
+  end
+  return false
 end
 
 local scm_env = {
@@ -457,11 +486,9 @@ local scm_env = {
     end
   },
   ['set-car!'] = function(p, x)
-    assert(consp(p))
     p[1] = x
   end,
   ['set-cdr!'] = function(p, x)
-    assert(consp(p))
     p[2] = x
   end,
   ['null?'] = function(p) return p == scm_nil end,
@@ -478,18 +505,29 @@ local scm_env = {
       return o(...)
     end
   end,
-  expand = function(x) return x end
+  expand = function(x) return x end,
+  ['eq?'] = scm_eq,
+  cons = cons,
+  car = function(p) return p[1] end,
+  cdr = function(p) return p[2] end,
+  ['pair?'] = consp,
+  ['symbol?'] = symbolp,
+  write = scm_print
 }
 
 local function repl()
-  term.setCursorBlink(true)
+  if term then
+    term.setCursorBlink(true)
+  end
   write('> ')
   local c, e = pcall(read_sexpr)
   if not c then
-    printError(e)
+    (printError or print)(e)
     return repl()
   else
-    term.setCursorBlink(false)
+    if term then
+      term.setCursorBlink(false)
+    end
     return apply_dispatch(scm_env.expand, quote(e), scm_env, function(e)
       return eval(e, scm_env, function(x)
         scm_print(x)
@@ -501,7 +539,7 @@ local function repl()
         write('\n')
         return repl()
       end)
-    end, errk)
+    end, print)
   end
 end
 
