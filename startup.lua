@@ -107,7 +107,9 @@ end
 
 local function eat(chs, i)
   local i = i or 1
-  if peekp() == chs:sub(i, i) then
+  if i > #chs then
+    return
+  elseif peekp(chs:sub(i, i)) and i <= #chs then
     getchar()
     return eat(chs, i + 1)
   else
@@ -172,13 +174,24 @@ local function cons(a,b)
   return {a,b}
 end
 
-local function read_sexpr_list()
+local delims = { [']'] = true, ['}'] = true, [')'] = true, ['['] = ']', ['('] = ')', ['{'] = '}' }
+
+local function read_sexpr_list(delim, can_dot)
   local ch = skip_spaces()
-  if ch == ')' then
+  if ch == delim then
     return scm_nil
+  elseif type(delims[ch]) == 'boolean' then
+    return error("delimiter mismatch: expected " .. delim .. " but got " .. ch)
+  elseif ch == '.' and can_dot then -- improper pair
+    local e = read_sexpr()
+    if not peekp(delim) then
+      return error("expected delimiter after cdr of improper list")
+    end
+    getchar()
+    return e
   else
     ungetchar(ch)
-    return {read_sexpr(), read_sexpr_list()}
+    return {read_sexpr(), read_sexpr_list(delim, true)}
   end
 end
 
@@ -197,6 +210,8 @@ local function read_string(acc)
     end
   elseif ch == '"' then
     return acc
+  elseif not ch then
+    error(("unterminated string literal: %q"):format(acc))
   else
     return read_string(acc .. ch)
   end
@@ -206,8 +221,8 @@ function read_sexpr()
   local ch = skip_spaces()
   if not ch then
     return scm_eof
-  elseif ch == '(' then
-    return read_sexpr_list()
+  elseif ch == '(' or ch == '[' or ch == '{' then
+    return read_sexpr_list(delims[ch], false)
   elseif ch == '\'' then
     return {_quote, {read_sexpr(), scm_nil}}
   elseif ch == '`' then
@@ -252,6 +267,10 @@ local function scm_print(e)
         end
         e = e[2]
       until not consp(e)
+      if e ~= scm_nil then
+        write ' . '
+        scm_print(e)
+      end
       write ')'
     elseif e == scm_nil then
       write ('\'()')
@@ -276,16 +295,21 @@ local function is_self_eval(e)
       or e == nil
 end
 
+local function throw(errk, ...)
+  return errk({[0]='error', ...})
+end
+
+
 function eval(expr, env, okk, errk)
   if symbolp(expr) and expr[1] ~= '' then
     if env[expr[1]] ~= nil then
       return okk(env[expr[1]])
     else
-      return errk('no binding for symbol ' .. expr[1])
+      return throw(errk, 'no binding for symbol ' .. expr[1])
     end
   elseif consp(expr) and expr[1] == _lambda then
     if not consp(expr[2][2]) then
-      return errk("not a valid lambda expression")
+      return throw(errk, "not a valid lambda expression")
     end
     return okk({[0]=eval,expr[2][1],env,expr[2][2]})
   elseif consp(expr) and expr[1] == _if then
@@ -307,25 +331,21 @@ function eval(expr, env, okk, errk)
     elseif consp(expr[2]) and consp(expr[2][1]) and consp(expr[2][2]) then
       return eval({ _define, { expr[2][1][1], { { _lambda, { expr[2][1][2], expr[2][2] } }, scm_nil } } }, env, okk, errk)
     else
-      return errk('invalid define expression')
+      return throw(errk, 'invalid define expression')
     end
   elseif consp(expr) and expr[1] == _quote then
     return okk(expr[2][1])
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
       return apply_dispatch(f, expr[2], env, okk, errk)
-    end, function(e)
-      scm_print(expr)
-      print()
-      return errk(e)
-    end)
+    end, errk)
   elseif is_self_eval(expr) then
     return okk(expr)
   else
-    print("don't know how to evaluate form:")
+    print("don't know how to evaluate form: ")
     scm_print(expr)
     print()
-    return errk("aborting")
+    return throw(errk, "aborting")
   end
 end
 
@@ -392,13 +412,16 @@ function apply_dispatch(f, args, env, okk, errk)
   elseif type(f) == 'function' then
     return callproc(f, args, env, okk, errk)
   else
-    return errk('can not apply non-functional object of type ' .. type(f))
+    scm_print(f)
+    return throw(errk, 'can not apply non-functional object of type ' .. type(f))
   end
 end
 
 function eval_args(args, env, okk, errk)
   if args == scm_nil then
     return okk(scm_nil)
+  elseif args[0] == eval_args then
+    return okk(args[1])
   else
     return eval(args[1], env, function(c)
       return eval_args(args[2], env, function(t)
@@ -413,10 +436,10 @@ local function quote(e)
 end
 
 local function load(okk, errk, env, path)
-  if not path then return errk('no file path specified') end
+  if not path then return throw(errk, 'no file path specified') end
   local h = io.open(path, 'r')
   if not h then
-    return errk("failed to open file " .. path .. " for reading")
+    return throw(errk, "failed to open file " .. path .. " for reading")
   else
     input_file = h
     local function load_loop(i)
@@ -428,9 +451,7 @@ local function load(okk, errk, env, path)
             input_file = h
             return load_loop(i + 1)
           end, errk)
-        end, function(e)
-          return errk(e .. ' in the ' .. tostring(i))
-        end)
+        end, errk)
       elseif err == scm_eof then
         input_file = nil
         h:close()
@@ -456,6 +477,8 @@ local function scm_eq(a, b)
   return false
 end
 
+local _gensym = 0
+
 local scm_env = {
   ['call/cc'] = {
     [0] = callproc,
@@ -475,12 +498,6 @@ local scm_env = {
       return s
     end
   end,
-  ['exit'] = {
-    [0] = callproc,
-    function(okk, errk, env)
-      return
-    end
-  },
   ['set-car!'] = function(p, x)
     p[1] = x
   end,
@@ -508,26 +525,41 @@ local scm_env = {
   cdr = function(p) return p[2] end,
   ['pair?'] = consp,
   ['symbol?'] = symbolp,
-  write = scm_print,
-  ['control'] = {
-    [0] = callproc,
-    function(ok, err, env, val)
-      return err(val, ok)
+  write = function(...)
+    local a = table.pack(...)
+    for i = 1, a. n do
+      scm_print(a[i])
     end
-  },
-  ['prompt'] = {
-    [0] = callproc,
-    function(ok, err, env, tag, func, handler)
-      return apply_dispatch(func, scm_nil, env, ok, function(raised, cont)
-        if scm_eq(tag, raised) then
-          return apply_dispatch(handler, {cont,scm_nil}, env, ok, err)
-        else
-          return err(raised, cont)
-        end
-      end)
-    end
-  },
+  end,
+  gensym = function()
+    _gensym = _gensym + 1
+    return mksymbol("#:" .. _gensym)
+  end
 }
+
+local function defproc(name, thnk)
+  scm_env[name] = { [0] = callproc, thnk }
+end
+
+defproc('apply', function(ok, err, env, fun, args)
+  return apply_dispatch(fun, {[0]=eval_args,args}, env, ok, err)
+end)
+
+defproc('error', function(ok, err, env, e)
+  return throw(err, e)
+end)
+
+defproc('cons', function(ok, err, env, car, cdr)
+  if car == nil then
+    return throw(err, "pair must have a car")
+  end
+  if cdr == nil then
+    return throw(err, "pair must have a cdr")
+  end
+  return ok{car,cdr}
+end)
+
+defproc('exit', function() end)
 
 local function repl()
   if term then
@@ -536,7 +568,11 @@ local function repl()
   write('> ')
   local c, e = pcall(read_sexpr)
   if e == scm_eof then
-    return
+    if os.exit then
+      os.exit(0)
+    else
+      error('Goodbye', 0)
+    end
   end
   if not c then
     (printError or print)(e)
@@ -552,7 +588,12 @@ local function repl()
         return repl()
       end, function(x)
         write('scheme error: ')
-        scm_print(x)
+        if x[0] == 'error' then
+          scm_print(x[1])
+        elseif x[0] == 'control' then
+          write('control without matching prompt for ')
+          scm_print(x.tag)
+        end
         write('\n')
         return repl()
       end)
@@ -562,5 +603,10 @@ end
 
 return load(repl, function(x)
   print('error while loading boot file:')
-  scm_print(x)
+  if x[0] == 'error' then
+    scm_print(x[1])
+  elseif x[0] == 'control' then
+    write('control without matching prompt for ')
+    scm_print(x.tag)
+  end
 end, scm_env, "boot.ss")

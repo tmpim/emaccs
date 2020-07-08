@@ -136,3 +136,17 @@
 
 (push-macro! 'begin (lambda (macro-arguments)
                       `(,(make-lambda '() macro-arguments))))
+
+(push-macro! 'define-syntax
+  (lambda (macro-arguments)
+    (if (and (pair? (car macro-arguments))
+             (pair? (cdr macro-arguments)))
+      (let ((name (caar macro-arguments))
+            (args (cdar macro-arguments))
+            (body (cdr macro-arguments))
+            (macro-args (gensym)))
+        `(push-macro! ',name
+                      ,(make-lambda
+                         (list macro-args)
+                         `((apply ,(make-lambda args body) ,macro-args)))))
+      (error "bad define-syntax"))))
