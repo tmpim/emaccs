@@ -132,3 +132,7 @@
     (if (and (pair? args) (null? (cdr args)))
       (quasiquote/helper (car args))
       (error "bad quasiquote"))))
+
+
+(push-macro! 'begin (lambda (macro-arguments)
+                      `(,(make-lambda '() macro-arguments))))

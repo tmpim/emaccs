@@ -277,7 +277,6 @@ local function is_self_eval(e)
 end
 
 function eval(expr, env, okk, errk)
-  assert(errk)
   if symbolp(expr) and expr[1] ~= '' then
     if env[expr[1]] ~= nil then
       return okk(env[expr[1]])
@@ -378,12 +377,9 @@ function callproc(fun, args, env, okk, errk, cont_aware)
     if cont_aware then
       return fun[1](okk, errk, env, unpack(t))
     else
-      local ok, err = pcall(fun, unpack(t))
-      if not ok then
-        return errk(err)
-      else
-        return okk(err)
-      end
+      -- if we use pcall here then we can't guarantee unbounded stack space
+      -- for calls that go through a Lua function
+      return okk(fun(unpack(t)))
     end
   end, errk)
 end
@@ -482,7 +478,7 @@ local scm_env = {
   ['exit'] = {
     [0] = callproc,
     function(okk, errk, env)
-      print 'exiting'
+      return
     end
   },
   ['set-car!'] = function(p, x)
@@ -512,7 +508,25 @@ local scm_env = {
   cdr = function(p) return p[2] end,
   ['pair?'] = consp,
   ['symbol?'] = symbolp,
-  write = scm_print
+  write = scm_print,
+  ['control'] = {
+    [0] = callproc,
+    function(ok, err, env, val)
+      return err(val, ok)
+    end
+  },
+  ['prompt'] = {
+    [0] = callproc,
+    function(ok, err, env, tag, func, handler)
+      return apply_dispatch(func, scm_nil, env, ok, function(raised, cont)
+        if scm_eq(tag, raised) then
+          return apply_dispatch(handler, {cont,scm_nil}, env, ok, err)
+        else
+          return err(raised, cont)
+        end
+      end)
+    end
+  },
 }
 
 local function repl()
@@ -521,6 +535,9 @@ local function repl()
   end
   write('> ')
   local c, e = pcall(read_sexpr)
+  if e == scm_eof then
+    return
+  end
   if not c then
     (printError or print)(e)
     return repl()
