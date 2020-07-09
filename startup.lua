@@ -84,6 +84,7 @@ local _quote = mksymbol('quote')
 local _quasiquote = mksymbol('quasiquote')
 local _unquote = mksymbol('unquote')
 local _define = mksymbol('define')
+local _set = mksymbol('set!')
 
 local function read_symbol(acc)
   local ch = getchar()
@@ -278,6 +279,19 @@ local function scm_print(e)
       write '<procedure>'
     elseif e == scm_eof then
       return '#eof'
+    else
+      write '(make-hash-table '
+      for k, v in pairs(e) do
+        write '('
+        scm_print(k)
+        write ' . '
+        scm_print(v)
+        write ')'
+        if next(e, k) ~= nil then
+          write ' '
+        end
+      end
+      write ')'
     end
   else
     write(tostring(e))
@@ -299,17 +313,38 @@ local function throw(errk, ...)
   return errk({[0]='error', ...})
 end
 
+local function find(env, ex)
+  if env == nil or env == scm_nil then
+    return nil
+  elseif env[1][ex] ~= nil then
+    return env[1][ex]
+  else
+    return find(env[2], ex)
+  end
+end
+
+local function setenv(okk, errk, env, what, to)
+  if env == nil or env == scm_nil then
+    return throw(errk, "no binding for", what, "anywhere in environment")
+  elseif env[1] and env[1][what] ~= nil then
+    env[1][what] = to
+    return okk(to)
+  else
+    return setenv(okk, errk, env[2], what, to)
+  end
+end
 
 function eval(expr, env, okk, errk)
   if symbolp(expr) and expr[1] ~= '' then
-    if env[expr[1]] ~= nil then
-      return okk(env[expr[1]])
+    local ex = find(env, expr[1])
+    if ex ~= nil then
+      return okk(ex)
     else
       return throw(errk, 'no binding for symbol ' .. expr[1])
     end
   elseif consp(expr) and expr[1] == _lambda then
     if not consp(expr[2][2]) then
-      return throw(errk, "not a valid lambda expression")
+      return throw(errk, "not a valid lambda expression", expr)
     end
     return okk({[0]=eval,expr[2][1],env,expr[2][2]})
   elseif consp(expr) and expr[1] == _if then
@@ -325,19 +360,32 @@ function eval(expr, env, okk, errk)
   elseif consp(expr) and expr[1] == _define then
     if consp(expr[2]) and symbolp(expr[2][1]) and consp(expr[2][2]) then
       return eval(expr[2][2][1], env, function(x)
-        env[expr[2][1][1]] = x
+        env[1][expr[2][1][1]] = x
         return okk(x)
       end, errk)
     elseif consp(expr[2]) and consp(expr[2][1]) and consp(expr[2][2]) then
       return eval({ _define, { expr[2][1][1], { { _lambda, { expr[2][1][2], expr[2][2] } }, scm_nil } } }, env, okk, errk)
     else
-      return throw(errk, 'invalid define expression')
+      return throw(errk, 'invalid define expression', expr)
     end
   elseif consp(expr) and expr[1] == _quote then
     return okk(expr[2][1])
+  elseif consp(expr) and expr[1] == _set then
+    if not symbolp(expr[2][1]) then
+      return throw(errk, 'can not set! non-symbol',expr[2][1])
+    end
+    local what = expr[2][1][1]
+    return eval(expr[2][2][1], env, function(x)
+      return setenv(okk, errk, env, what, x)
+    end, errk)
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
-      return apply_dispatch(f, expr[2], env, okk, errk)
+      return apply_dispatch(f, expr[2], env, okk, function(e)
+        if e[0] == 'error' then
+          scm_print(expr); print()
+        end
+        return errk(e)
+      end)
     end, errk)
   elseif is_self_eval(expr) then
     return okk(expr)
@@ -371,9 +419,8 @@ end
 
 function apply(fun, args, env, okk, errk)
   return eval_args(args, env, function(args)
-    local fa, fb, fe = fun[1], fun[3], setmetatable(copy(fun[2]), { __index = env })
-    local fenv = make_env(fa, args, {})
-    setmetatable(fenv, { __index = fe })
+    local fa, fb = fun[1], fun[3]
+    local fenv = { make_env(fa, args, {}), { fun[2], env } }
     local function eval_body(b, acc)
       if b == scm_nil then
         return okk(acc or false)
@@ -412,7 +459,6 @@ function apply_dispatch(f, args, env, okk, errk)
   elseif type(f) == 'function' then
     return callproc(f, args, env, okk, errk)
   else
-    scm_print(f)
     return throw(errk, 'can not apply non-functional object of type ' .. type(f))
   end
 end
@@ -446,7 +492,7 @@ local function load(okk, errk, env, path)
       local ok, err = pcall(read_sexpr)
       if ok and err ~= scm_eof then
         input_file = nil
-        return apply_dispatch(env.expand, quote(err), env, function(expr)
+        return apply_dispatch(find(env, 'expand'), quote(err), env, function(expr)
           return eval(expr, env, function(value)
             input_file = h
             return load_loop(i + 1)
@@ -581,32 +627,32 @@ local function repl()
     if term then
       term.setCursorBlink(false)
     end
-    return apply_dispatch(scm_env.expand, quote(e), scm_env, function(e)
-      return eval(e, scm_env, function(x)
+    return apply_dispatch(scm_env.expand, quote(e), {scm_env,scm_nil}, function(e)
+      return eval(e, {scm_env,scm_nil}, function(x)
         scm_print(x)
         write('\n')
         return repl()
       end, function(x)
         write('scheme error: ')
         if x[0] == 'error' then
-          scm_print(x[1])
-        elseif x[0] == 'control' then
-          write('control without matching prompt for ')
-          scm_print(x.tag)
+          for i = 1, #x do
+            scm_print(x[i])
+            write(' ')
+          end
         end
         write('\n')
         return repl()
       end)
-    end, print)
+    end, scm_print)
   end
 end
 
 return load(repl, function(x)
   print('error while loading boot file:')
   if x[0] == 'error' then
-    scm_print(x[1])
-  elseif x[0] == 'control' then
-    write('control without matching prompt for ')
-    scm_print(x.tag)
+    for i = 1, #x do
+      scm_print(x[i])
+      write(' ')
+    end
   end
-end, scm_env, "boot.ss")
+end, {scm_env,scm_nil}, "boot.ss")
