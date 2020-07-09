@@ -14,14 +14,10 @@
 
 (define list (lambda x x))
 
-(define (box x) (cons 'box x))
-(define (unbox x) (cdr x))
-(define (set-box! box val) (set-cdr! box val))
-
-(define macros (box '()))
+(define macros '())
 
 (define (push-macro! name expander)
-  (set-box! macros (cons (cons name expander) (unbox macros))))
+  (set! macros (cons (cons name expander) macros)))
 
 (define (lookup-macro-in symbol table)
   (if (null? table)
@@ -82,7 +78,7 @@
             (expand/helper shadow (m-entry (cdr s)))
             (cons (expand/helper shadow (car s))
                   (expand/helper shadow (cdr s)))))
-        (lookup-macro-in (car s) (unbox macros)))))
+        (lookup-macro-in (car s) macros))))
    (if (pair? s)
      (cons (expand/helper shadow (car s))
            (expand/helper shadow (cdr s)))
