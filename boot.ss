@@ -1,6 +1,3 @@
-; (call/native '(term setCursorPos) 1 1)
-; (call/native '(term clear))
-
 (define (not b)
   (if b #f #t))
 
@@ -113,25 +110,31 @@
 (push-macro! 'and and-expander)
 (push-macro! 'or or-expander)
 
-(define (quasiquote/helper expr)
+(define (quasiquote/helper do-quote expr)
   (if (and (pair? expr)
            (= 'unquote (car expr)))
     (cadr expr)
     (if (pair? expr)
-      (list 'cons
-        (quasiquote/helper (car expr))
-        (quasiquote/helper (cdr expr)))
-      (list 'quote expr))))
+      (if (and (pair? (car expr)) (= 'unquote-splicing (caar expr)))
+        (list
+          'append
+          (car (cdar expr))
+          (quasiquote/helper #t (cdr expr)))
+        (if (= (car expr) 'unquote-splicing)
+          (cadr expr)
+          (list 'cons
+            (quasiquote/helper #t (car expr))
+            (quasiquote/helper #t (cdr expr)))))
+      (if do-quote
+        (list 'quote expr)
+        expr))))
 
 (push-macro! 'quasiquote
   (lambda (args)
     (if (and (pair? args) (null? (cdr args)))
-      (quasiquote/helper (car args))
+      (quasiquote/helper #t (car args))
       (error "bad quasiquote"))))
 
-
-(push-macro! 'begin (lambda (macro-arguments)
-                      `(,(make-lambda '() macro-arguments))))
 
 (push-macro! 'define-syntax
   (lambda (macro-arguments)
@@ -146,3 +149,25 @@
                          (list macro-args)
                          `((apply ,(make-lambda args body) ,macro-args)))))
       (error "bad define-syntax"))))
+
+(push-macro! 'begin (lambda (macro-arguments)
+                      `(,(make-lambda '() macro-arguments))))
+
+
+(define-syntax (eval-when e . body)
+  (if (eval e)
+    (cons 'begin body)
+    #t))
+
+(eval-when (= platform 'computercraft)
+  (call/native '(term clear))
+  (call/native '(term setCursorPos) 1 1))
+
+(define-syntax (cond . cases)
+  (define (expand cases)
+    (if (null? cases)
+      #f
+      `(if ,(caar cases)
+         ,(cons 'begin (cdar cases))
+         ,(expand (cdr cases)))))
+  (expand cases))

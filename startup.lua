@@ -83,6 +83,7 @@ local _if = mksymbol('if')
 local _quote = mksymbol('quote')
 local _quasiquote = mksymbol('quasiquote')
 local _unquote = mksymbol('unquote')
+local _unquotes = mksymbol('unquote-splicing')
 local _define = mksymbol('define')
 local _set = mksymbol('set!')
 
@@ -229,6 +230,10 @@ function read_sexpr()
   elseif ch == '`' then
     return {_quasiquote, {read_sexpr(), scm_nil}}
   elseif ch == ',' then
+    if peekp('@') then
+      getchar()
+      return {_unquotes, {read_sexpr(), scm_nil}}
+    end
     return {_unquote, {read_sexpr(), scm_nil}}
   elseif ch <= '9' and ch >= '0' then
     return read_number(ch)
@@ -380,12 +385,7 @@ function eval(expr, env, okk, errk)
     end, errk)
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
-      return apply_dispatch(f, expr[2], env, okk, function(e)
-        if e[0] == 'error' then
-          scm_print(expr); print()
-        end
-        return errk(e)
-      end)
+      return apply_dispatch(f, expr[2], env, okk)
     end, errk)
   elseif is_self_eval(expr) then
     return okk(expr)
@@ -516,7 +516,7 @@ local function scm_eq(a, b)
   if a == b then
     return true
   elseif consp(a) and consp(b) then
-      return scm_eq(a[1]) and scm_eq(a[2])
+    return scm_eq(a[1]) and scm_eq(a[2])
   elseif type(a) == 'table' and (a[0] == eval or a[0] == callproc) then
     return false
   end
@@ -571,6 +571,8 @@ local scm_env = {
   cdr = function(p) return p[2] end,
   ['pair?'] = consp,
   ['symbol?'] = symbolp,
+  ['string?'] = function(x) return type(x) == "string" end,
+  ['number?'] = function(x) return type(x) == "number" end,
   write = function(...)
     local a = table.pack(...)
     for i = 1, a. n do
@@ -591,8 +593,8 @@ defproc('apply', function(ok, err, env, fun, args)
   return apply_dispatch(fun, {[0]=eval_args,args}, env, ok, err)
 end)
 
-defproc('error', function(ok, err, env, e)
-  return throw(err, e)
+defproc('error', function(ok, err, env, ...)
+  return throw(err, ...)
 end)
 
 defproc('cons', function(ok, err, env, car, cdr)
@@ -603,6 +605,17 @@ defproc('cons', function(ok, err, env, car, cdr)
     return throw(err, "pair must have a cdr")
   end
   return ok{car,cdr}
+end)
+
+defproc('eval', function(ok, err, env, exp)
+  return eval(exp, env, ok, err)
+end)
+
+defproc('defined?', function(ok, err, env, exp)
+  if not symbolp(exp) then
+    return throw(err, 'not a symbol', exp)
+  end
+  return ok(find(env, exp[1]) ~= nil)
 end)
 
 defproc('exit', function() end)
@@ -645,6 +658,16 @@ local function repl()
       end)
     end, scm_print)
   end
+end
+
+if _CC_DEFAULT_SETTINGS then
+  scm_env.platform = mksymbol('computercraft')
+elseif component then
+  scm_env.platform = mksymbol('opencomputers')
+elseif jit then
+  scm_env.platform = mksymbol('luajit')
+else
+  scm_env.platform = mksymbol('puc-lua')
 end
 
 return load(repl, function(x)
