@@ -204,6 +204,8 @@
 (define (compile e)
   (compile-expr (lambda (x) (format "return %s" x)) (expand e)))
 
+(run/native "_G._S42globalS45environmentS42 = _ENV")
+
 (define (compile-and-load e)
   (define name
     (if (define? e)
@@ -211,7 +213,7 @@
             (car (car (cadr e)))
             (car (cadr e)))
         "[expr]"))
-  (call/native 'load (compile e)))
+  (call/native 'load (compile e) name "t" *global-environment*))
 
 (define (compile-and-run e)
   ((compile-and-load e)))

@@ -828,6 +828,8 @@ else
   scm_env.booting = false
 end
 
+scm_env['*global-environment*'] = _G
+
 return scm_load(repl, function(x)
   print('error while scm_loading boot file:')
   if x[0] == 'error' then
