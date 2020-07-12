@@ -125,7 +125,6 @@
   (case expr
     [(e #:when (not (pair? e))) (compile-simple-expression return e)]
     [('quote e) (compile-quote return e)]
-    [(('defined? v) #:when (symbol? v)) (return (format "%s ~= nil" (escape-symbol v)))]
     [('lambda args . body)
      (let ((ret return))
        (compile-lambda (lambda (x) (ret (format "(function%s)" x))) args body))]
@@ -167,7 +166,11 @@
                (compile-expr (lambda (x) x) fun)
                (compile-args args)))]))
 
-(define-syntax (run/native r) `((call/native 'load ,r)))
+(define-syntax (run/native r)
+  `(begin
+     (if booting
+       (write #\newline ,r #\newline))
+     (call/native 'load ,r)))
 
 (run/native
    "function var(x, n)
@@ -222,14 +225,18 @@
   (let ((x (read)))
     (if (eq? x #eof)
       i
-      (catch (lambda ()
-               ((if p write (lambda (x) #f))
-                (compile-and-run x)
-                #\newline)
-               (repl p (+ 1 i)))
-             (lambda (e)
-               (write "Error in user code: " e #\newline)
-               (repl p i))))))
+      (if booting
+        (begin
+          (write (compile-expr (lambda (x) (format "ignore(%s)\n" x)) (expand x)))
+          (repl p (+ 1 i)))
+        (catch (lambda ()
+                 ((if p write (lambda (x) #f))
+                  (compile-and-run x)
+                  #\newline)
+                 (repl p (+ 1 i)))
+              (lambda (e)
+                (write "Error in user code: " e #\newline)
+                (repl p i)))))))
 
 (define/native (set-car! cell val) "_cell[1] = _val; return true")
 (define/native (car cell) "return _cell[1]")
@@ -261,12 +268,15 @@
 
 (define/native (with-input-from-file path thunk) "return redirect(_path, _thunk)")
 
-(run/native
-  "do
-    local h = assert(io.open('operators.lua', 'r'))
-    assert(load(h:read'*a'))()
-    h:close()
-   end")
+(if (not booting)
+  (run/native
+    "do
+      local h = assert(io.open('operators.lua', 'r'))
+      assert(load(h:read'*a'))()
+      h:close()
+     end"))
+
+(run/native "_booting = false") ; compiler is never used for booting
 
 (define *loaded-modules* '())
 
@@ -275,10 +285,24 @@
                 (call/native 'rawget *loaded-modules* *loaded-modules*)))
     (write "Already compiled " path #\newline)
     (begin
-      (write "Compiling " path #\newline)
+      (if (not booting)
+        (write "Compiling " path #\newline))
       (with-input-from-file path (lambda () (repl #f 0)))
       (call/native 'rawset *loaded-modules* path #t)
       #t)))
 
+(define (compile-file path)
+  (define (loop)
+    (let ((x (read)))
+      (if (eq? x #eof)
+        (write "end-of-file\n")
+        (begin
+          (write (compile-expr (lambda (x) (format "ignore(%s)" x)) x))
+          (loop)))))
+  (with-input-from-file path loop))
+
 (if (= platform "Scheme 51")
   (define load compiler-load))
+
+(define (run path)
+  (with-input-from-file path (lambda () (repl #f 0))))

@@ -153,7 +153,6 @@
 (push-macro! 'begin (lambda (macro-arguments)
                       `(,(make-lambda '() macro-arguments))))
 
-
 (define-syntax (cond . cases)
   (define (expand cases)
     (if (null? cases)
@@ -167,12 +166,18 @@
 
 (if (not (or (eq? platform "Scheme 51")
              (eq? platform "Boot Scheme")))
-  (begin
+  (let ((start (call/native '(os clock))))
+    (if booting
+      (write "local function ignore(x) end\n"))
     (load "compiler.ss")
     (compiler-load "boot.ss")
     (compiler-load "case.ss")
     (compiler-load "compiler.ss")
-    (write "Loaded.\n")
-    (((call/native 'load "return _repl")) #t 1)
+    (if (not booting)
+      (begin
+        (write "Loaded (took " (- (call/native '(os clock)) start) "s).\n")
+        (((call/native 'load "return _repl")) #t 1)))
     (exit))
   #t)
+
+1

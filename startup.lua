@@ -2,6 +2,12 @@ local input, input_file = {}
 
 local write = write
 
+if not table.pack then
+  table.pack = function(...)
+    return { n = select('#', ...), ... }
+  end
+end
+
 if not write then
   function write(x)
     return io.write(tostring(x))
@@ -354,7 +360,7 @@ end
 local reductions = 0
 
 function eval(expr, env, okk, errk)
-  if _CC_DEFAULT_SETTINGS and reductions % (2^16) == 0 then
+  if _CC_DEFAULT_SETTINGS and reductions % (2^12) == 0 then
     print('yielding after ' .. reductions .. ' reductions')
     os.queueEvent('x')
     os.pullEvent('x')
@@ -505,23 +511,23 @@ local function quote(e)
   return {{_quote, {e, scm_nil}}, scm_nil}
 end
 
-local loaded = {}
+local scm_loaded = {}
 
-local function load(okk, errk, env, path)
+local function scm_load(okk, errk, env, path)
   if not path then return throw(errk, 'no file path specified') end
   local h = io.open(path, 'r')
   if not h then
     return throw(errk, "failed to open file " .. path .. " for reading")
   else
     input_file = h
-    local function load_loop(i)
+    local function scm_load_loop(i)
       local ok, err = pcall(read_sexpr)
       if ok and err ~= scm_eof then
         input_file = nil
         return apply_dispatch(find(env, 'expand'), quote(err), env, function(expr)
           return eval(expr, env, function(value)
             input_file = h
-            return load_loop(i + 1)
+            return scm_load_loop(i + 1)
           end, errk)
         end, errk)
       elseif err == scm_eof then
@@ -534,7 +540,7 @@ local function load(okk, errk, env, path)
         return errk(err)
       end
     end
-    return load_loop(0)
+    return scm_load_loop(0)
   end
 end
 
@@ -591,7 +597,7 @@ local scm_env = {
     p[2] = x
   end,
   ['null?'] = function(p) return p == scm_nil end,
-  load = { [0] = callproc, load },
+  load = { [0] = callproc, scm_load },
   ['call/native'] = function(s, ...)
     if symbolp(s) then
       return _G[s[1]](...)
@@ -801,6 +807,8 @@ function _G._write(...)
 end
 scm_env.read  = read_sexpr
 
+local handles = {}
+
 function _G.redirect(p, t)
   local h, i = io.open(p, 'r'), input_file
   if h then
@@ -814,8 +822,14 @@ function _G.redirect(p, t)
 end
 -- return repl()
 
-return load(repl, function(x)
-  print('error while loading boot file:')
+if select(1, ...) == 'boot' then
+  scm_env.booting = true
+else
+  scm_env.booting = false
+end
+
+return scm_load(repl, function(x)
+  print('error while scm_loading boot file:')
   if x[0] == 'error' then
     for i = 1, #x do
       scm_print(x[i])

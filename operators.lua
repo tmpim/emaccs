@@ -62,7 +62,7 @@ function _apply(f, t)
     args[i] = t[1]
     i, n, t = i + 1, n + 1, t[2]
   end
-  return f(table.unpack(args, 1, n))
+  return f(unpack(args, 1, n))
 end
 
 do
@@ -94,3 +94,32 @@ end
 function _pairS63(p)
   return type(p) == 'table' and #p == 2
 end
+
+function _S62(...)
+  local t = table.pack(...)
+  if t.n < 2 then
+    error("not enough arguments for operator (-)")
+  else
+    for i = 1, t.n do
+      if t[i + 1] and t[i] <= t[i + 1] then
+        return false
+      end
+    end
+    return true
+  end
+end
+
+function _S60(...)
+  local t = table.pack(...)
+  if t.n < 2 then
+    error("not enough arguments for operator (-)")
+  else
+    for i = 1, t.n do
+      if t[i + 1] and t[i] >= t[i + 1] then
+        return false
+      end
+    end
+    return true
+  end
+end
+
