@@ -58,7 +58,8 @@ local function read_number(acc)
 end
 
 local symbol_chars = {
-  ['+'] = true, ['-'] = true, ['?'] = true, ['!'] = true, ['='] = true
+  ['+'] = true, ['-'] = true, ['?'] = true, ['!'] = true, ['='] = true,
+  ['>'] = true, ['<'] = true, ['*'] = true
 }
 
 local function symbol_carp(ch)
@@ -67,11 +68,11 @@ end
 
 local symbol_table, symbol = {}, {}
 
-local function mksymbol(x)
+local function mksymbol(x, iskeyword)
   if symbol_table[x] then
     return symbol_table[x]
   else
-    symbol_table[x] = {[0]=symbol,x}
+    symbol_table[x] = {kw=iskeyword,[0]=symbol,x}
     return symbol_table[x]
   end
 end
@@ -87,13 +88,13 @@ local _unquotes = mksymbol('unquote-splicing')
 local _define = mksymbol('define')
 local _set = mksymbol('set!')
 
-local function read_symbol(acc)
+local function read_symbol(acc, k)
   local ch = getchar()
   if symbol_carp(ch) or (ch <= '9' and ch >= '0') or ch == '/' then
-    return read_symbol(acc .. ch)
+    return read_symbol(acc .. ch, k)
   else
     ungetchar(ch)
-    return mksymbol(acc)
+    return (k or mksymbol)(acc)
   end
 end
 
@@ -155,6 +156,8 @@ local function read_character()
   end
 end
 
+local scm_nil, scm_eof = {}, {}
+
 local function read_special_atom()
   local ch = getchar()
   if ch == 't' then
@@ -166,12 +169,18 @@ local function read_special_atom()
   elseif ch == ';' then
     read_sexpr()
     return true
+  elseif ch == ':' then
+    return read_symbol('', function(s)
+      return {[0] = symbol, kw = true, s}
+    end)
+  elseif ch == 'e' then
+    eat('of')
+    return scm_eof
   else
     return error('unexpected special atom ' .. ch)
   end
 end
 
-local scm_nil, scm_eof = {}, {}
 local function cons(a,b)
   return {a,b}
 end
@@ -244,7 +253,7 @@ function read_sexpr()
   elseif ch == '"' then
     return read_string("")
   else
-    return error("lexical error at character:" .. ch)
+    return error("lexical error at character: " .. ch)
   end
 end
 
@@ -263,7 +272,7 @@ local function scm_print(e)
     if symbolp(e) then
       write(e[1])
     elseif e[0] == eval then
-      write('<closure>')
+      write '#\'<closure>'
     elseif consp(e) then
       write '('
       repeat
@@ -283,7 +292,10 @@ local function scm_print(e)
     elseif e[0] == callproc then
       write '<procedure>'
     elseif e == scm_eof then
-      return '#eof'
+      write '#eof'
+    elseif e.kw then
+      write '#:'
+      write(e[1])
     else
       write '(make-hash-table '
       for k, v in pairs(e) do
@@ -385,15 +397,17 @@ function eval(expr, env, okk, errk)
     end, errk)
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
-      return apply_dispatch(f, expr[2], env, okk)
+      return apply_dispatch(f, expr[2], env, okk, function(e)
+        scm_print(expr); print()
+        return errk(e)
+      end)
     end, errk)
   elseif is_self_eval(expr) then
     return okk(expr)
+  elseif expr[0] == symbol and expr.kw then
+    return throw(errk, "illegal use of keyword", expr, "as expression")
   else
-    print("don't know how to evaluate form: ")
-    scm_print(expr)
-    print()
-    return throw(errk, "aborting")
+    return throw(errk, "don't know how to evaluate object", expr)
   end
 end
 
@@ -420,7 +434,7 @@ end
 function apply(fun, args, env, okk, errk)
   return eval_args(args, env, function(args)
     local fa, fb = fun[1], fun[3]
-    local fenv = { make_env(fa, args, {}), { fun[2], env } }
+    local fenv = { make_env(fa, args, {}), { fun[2][1], env } }
     local function eval_body(b, acc)
       if b == scm_nil then
         return okk(acc or false)
@@ -442,6 +456,7 @@ function callproc(fun, args, env, okk, errk, cont_aware)
       args = args[2]
     until args == scm_nil or not args
     if cont_aware then
+      assert(errk)
       return fun[1](okk, errk, env, unpack(t))
     else
       -- if we use pcall here then we can't guarantee unbounded stack space
@@ -455,6 +470,7 @@ function apply_dispatch(f, args, env, okk, errk)
   if type(f) == 'table' and f[0] == eval then
     return apply(f, args, env, okk, errk)
   elseif type(f) == 'table' and f[0] == callproc then
+    assert(errk)
     return callproc(f, args, env, okk, errk, true)
   elseif type(f) == 'function' then
     return callproc(f, args, env, okk, errk)
@@ -480,6 +496,8 @@ end
 local function quote(e)
   return {{_quote, {e, scm_nil}}, scm_nil}
 end
+
+local loaded = {}
 
 local function load(okk, errk, env, path)
   if not path then return throw(errk, 'no file path specified') end
@@ -519,6 +537,8 @@ local function scm_eq(a, b)
     return scm_eq(a[1]) and scm_eq(a[2])
   elseif type(a) == 'table' and (a[0] == eval or a[0] == callproc) then
     return false
+  elseif type(a) == 'table' and a.kw and type(b) == 'table' and b.kw then
+    return a[1] == b[1]
   end
   return false
 end
@@ -540,6 +560,18 @@ local scm_env = {
       local s = 0
       for i = 1, args.n do
         s = s + args[i]
+      end
+      return s
+    end
+  end,
+  ['*'] = function(...)
+    local args = table.pack(...)
+    if args.n == 0 then
+      return 1
+    else
+      local s = 1
+      for i = 1, args.n do
+        s = s * args[i]
       end
       return s
     end
@@ -620,6 +652,82 @@ end)
 
 defproc('exit', function() end)
 
+defproc('-', function(ok, err, env, ...)
+  assert(err)
+  local a = table.pack(...)
+  if a.n == 0 then
+    return throw(err, 'insufficient arguments for -')
+  else
+    local x = a[1]
+    for i = 2, #a do
+      x = x - a[i]
+    end
+    return ok(x)
+  end
+end)
+
+defproc('/', function(ok, err, env, ...)
+  local a = table.pack(...)
+  if a.n == 0 then
+    return throw(err, 'insufficient arguments for /')
+  else
+    local x = a[1]
+    for i = 2, #a do
+      x = x / a[i]
+    end
+    return ok(x)
+  end
+end)
+
+defproc('call-with-prompt', function(okk, errk, env, tag, thunk, handler)
+  local v = apply_dispatch(thunk, scm_nil, env, function(x)
+    return {okk, x}
+  end, function(e)
+    if e[0] == 'prompt' and scm_eq(e.tag, tag) then
+      return apply_dispatch(handler, {e.cont, {{_quote,{e.val,scm_nil}}, scm_nil}}, env, function(x)
+        return {okk, x}
+      end, function(e)
+        return {errk, x}
+      end)
+    else
+      return {errk, e}
+    end
+  end)
+  assert((v[1] == okk or v[1] == errk) and v[2])
+  if consp(v[2]) and v[2][1] == v[1] then
+    return v[2][1](v[2][2])
+  end
+  return v[1](v[2])
+end)
+
+defproc('abort-to-prompt', function(ok, err, env, tag, val)
+  return err({ [0] = 'prompt', cont = ok, tag = tag, val = val })
+end)
+
+defproc('catch', function(ok, err, env, thunk, handler)
+  return apply_dispatch(thunk, scm_nil, env, ok, function(x)
+    return apply_dispatch(handler, quote(x), env, ok, err)
+  end)
+end)
+
+defproc('with-input-from-file', function(ok, err, env, p, f)
+  local h, i = io.open(p, 'r'), input_file
+  if h then
+    input_file = h
+    return apply_dispatch(f, scm_nil, env, function(r)
+      input_file = i
+      h:close()
+      return ok(r)
+    end, function(e)
+      input_file = i
+      h:close()
+      return err(e)
+    end)
+  else
+    return throw(err, 'failed to open', p, 'for reading')
+  end
+end)
+
 local function repl()
   if term then
     term.setCursorBlink(true)
@@ -652,6 +760,8 @@ local function repl()
             scm_print(x[i])
             write(' ')
           end
+        else
+          scm_print(x)
         end
         write('\n')
         return repl()
@@ -669,6 +779,32 @@ elseif jit then
 else
   scm_env.platform = mksymbol('puc-lua')
 end
+
+_G._read      = read_sexpr
+_G.scm_nil    = scm_nil
+_G.scm_eof    = scm_eof
+_G.symbol     = mksymbol
+_G._symbolS63 = symbolp
+function _G._write(...)
+  local t = table.pack(...)
+  for i = 1, t.n do
+    scm_print(t[i])
+  end
+end
+scm_env.read  = read_sexpr
+
+function _G.redirect(p, t)
+  local h, i = io.open(p, 'r'), input_file
+  if h then
+    input_file = h
+    local r = t()
+    input_file = i
+    return r
+  else
+    return throw(err, 'failed to open', p, 'for reading')
+  end
+end
+-- return repl()
 
 return load(repl, function(x)
   print('error while loading boot file:')

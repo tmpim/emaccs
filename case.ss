@@ -1,4 +1,4 @@
-(define-syntax (case expr . cases)
+(define-syntax (case expr head . cases)
   (define match-sym (gensym))
   (define (compile-match pattern match-sym body rest)
     (cond
@@ -14,18 +14,33 @@
       ((symbol? pattern)
        `(let ((,pattern ,match-sym))
           ,body))
+      ((and (pair? pattern)
+            (pair? (cdr pattern))
+            (pair? (cddr pattern))
+            (eq? (cadr pattern) '#:when))
+       (define join (gensym))
+       `(let ((,join (lambda () ,(rest))))
+          ,(compile-match
+             (car pattern)
+             match-sym
+             `(if ,(car (cddr pattern))
+                ,body
+                (,join))
+             (lambda () `(,join)))))
       ((pair? pattern)
        (define join (gensym))
        `(let ((,join (lambda () ,(rest))))
-         ,(compile-match
-             (car pattern)
-             `(car ,match-sym)
-             (compile-match
-               (cdr pattern)
-               `(cdr ,match-sym)
-               body
-               (lambda () `(,join)))
-             (lambda () `(,join)))))))
+          (if (pair? ,match-sym)
+            ,(compile-match
+                (car pattern)
+                `(car ,match-sym)
+                (compile-match
+                  (cdr pattern)
+                  `(cdr ,match-sym)
+                  body
+                  (lambda () `(,join)))
+                (lambda () `(,join)))
+            (,join))))))
   (define (expand cases)
     (if (null? cases)
       #f
@@ -36,7 +51,7 @@
         (lambda ()
           (expand (cdr cases))))))
   `(let ((,match-sym ,expr))
-     ,(expand cases)))
+     ,(expand (cons head cases))))
 
 (define-syntax (case-lambda . cases)
   (define name (gensym))
@@ -61,11 +76,3 @@
   (define name (car (caar rules)))
   `(define-syntax (,name . ,args)
      ,(expand-rules name rules)))
-
-(syntax-rules
-  ((or) #f)
-  ((or x) x)
-  ((or x y . z)
-   (define xs (gensym))
-   `(let ((,xs ,x))
-      (if ,xs ,xs (or ,y . ,z)))))

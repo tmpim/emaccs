@@ -154,15 +154,6 @@
                       `(,(make-lambda '() macro-arguments))))
 
 
-(define-syntax (eval-when e . body)
-  (if (eval e)
-    (cons 'begin body)
-    #t))
-
-(eval-when (= platform 'computercraft)
-  (call/native '(term clear))
-  (call/native '(term setCursorPos) 1 1))
-
 (define-syntax (cond . cases)
   (define (expand cases)
     (if (null? cases)
@@ -171,3 +162,17 @@
          ,(cons 'begin (cdar cases))
          ,(expand (cdr cases)))))
   (expand cases))
+
+(define else #t)
+
+(if (not (or (eq? platform "Scheme 51")
+             (eq? platform "Boot Scheme")))
+  (begin
+    (load "compiler.ss")
+    (compiler-load "boot.ss")
+    (compiler-load "case.ss")
+    (compiler-load "compiler.ss")
+    (write "Loaded.\n")
+    (((call/native 'load "return _repl")) #t 1)
+    (exit))
+  #t)
