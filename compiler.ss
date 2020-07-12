@@ -222,8 +222,14 @@
   (let ((x (read)))
     (if (eq? x #eof)
       i
-      (begin ((if p write (lambda (x) #f)) (compile-and-run x) #\newline)
-             (repl p (+ 1 i))))))
+      (catch (lambda ()
+               ((if p write (lambda (x) #f))
+                (compile-and-run x)
+                #\newline)
+               (repl p (+ 1 i)))
+             (lambda (e)
+               (write "Error in user code: " e #\newline)
+               (repl p i))))))
 
 (define/native (set-car! cell val) "_cell[1] = _val; return true")
 (define/native (car cell) "return _cell[1]")

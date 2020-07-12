@@ -351,7 +351,15 @@ local function setenv(okk, errk, env, what, to)
   end
 end
 
+local reductions = 0
+
 function eval(expr, env, okk, errk)
+  if _CC_DEFAULT_SETTINGS and reductions % (2^16) == 0 then
+    print('yielding after ' .. reductions .. ' reductions')
+    os.queueEvent('x')
+    os.pullEvent('x')
+  end
+  reductions = reductions + 1
   if symbolp(expr) and expr[1] ~= '' then
     local ex = find(env, expr[1])
     if ex ~= nil then
