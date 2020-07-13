@@ -366,7 +366,7 @@ function eval(expr, env, okk, errk)
     os.pullEvent('x')
   end
   reductions = reductions + 1
-  if symbolp(expr) and expr[1] ~= '' then
+  if symbolp(expr) and expr[1] ~= '' and not expr.kw then
     local ex = find(env, expr[1])
     if ex ~= nil then
       return okk(ex)
@@ -557,7 +557,7 @@ local function scm_eq(a, b)
   return false
 end
 
-local _gensym = 0
+local gensym_counter = 0
 
 local scm_env = {
   ['call/cc'] = {
@@ -617,6 +617,9 @@ local scm_env = {
   cdr = function(p) return p[2] end,
   ['pair?'] = consp,
   ['symbol?'] = symbolp,
+  ['keyword?'] = function(s)
+    return symbolp(s) and s.kw ==  true
+  end,
   ['string?'] = function(x) return type(x) == "string" end,
   ['number?'] = function(x) return type(x) == "number" end,
   write = function(...)
@@ -626,8 +629,8 @@ local scm_env = {
     end
   end,
   gensym = function()
-    _gensym = _gensym + 1
-    return mksymbol("#:" .. _gensym)
+    gensym_counter = gensym_counter + 1
+    return mksymbol("#." .. gensym_counter)
   end
 }
 
@@ -798,7 +801,11 @@ _G._read      = read_sexpr
 _G.scm_nil    = scm_nil
 _G.scm_eof    = scm_eof
 _G.symbol     = mksymbol
+function _G.keyword(s)
+  return {[0]=symbol,kw=true,s}
+end
 _G._symbolS63 = symbolp
+_G._eqS63     = scm_eq
 function _G._write(...)
   local t = table.pack(...)
   for i = 1, t.n do
@@ -829,6 +836,22 @@ else
 end
 
 scm_env['*global-environment*'] = _G
+
+function _G.scm_set_helper(x, v, n)
+  if not x then
+    error("can't set! " .. n)
+  end
+  return v
+end
+
+function _G.var(x, n)
+  if x ~= nil then
+    return x
+  end
+  return error("no binding for symbol " .. n, 2)
+end
+
+dofile 'operators.lua'
 
 return scm_load(repl, function(x)
   print('error while scm_loading boot file:')

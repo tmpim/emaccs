@@ -62,15 +62,18 @@ function _apply(f, t)
     args[i] = t[1]
     i, n, t = i + 1, n + 1, t[2]
   end
-  return f(unpack(args, 1, n))
+  local ok, err = pcall(f, unpack(args, 1, n))
+  if not ok then
+    error(err, 2)
+  else
+    return err
+  end
 end
 
-do
-  local counter = 0
-  function _gensym()
-    counter = counter + 1
-    return symbol('#:' .. counter)
-  end
+local gensym_counter = gensym_counter or 0
+function _gensym()
+  gensym_counter = gensym_counter + 1
+  return symbol('#.' .. gensym_counter)
 end
 
 function _error(...)

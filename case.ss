@@ -1,3 +1,5 @@
+(define (case-pair? p) (pair? p))
+
 (define-syntax (case expr head . cases)
   (define match-sym (gensym))
   (define (compile-match pattern match-sym body rest)
@@ -30,7 +32,7 @@
       ((pair? pattern)
        (define join (gensym))
        `(let ((,join (lambda () ,(rest))))
-          (if (pair? ,match-sym)
+          (if (case-pair? ,match-sym)
             ,(compile-match
                 (car pattern)
                 `(car ,match-sym)

@@ -1,5 +1,7 @@
-(if (not (eq? platform "Boot Scheme"))
-  (load "case.ss") #t)
+(if (and (not (eq? platform "Boot Scheme"))
+         (not (eq? platform "Scheme 51")))
+  (load "case.ss"))
+
 
 (define (expand-for-compilation expr)
   (expand '(let) expr))
@@ -20,9 +22,10 @@
 
 (define (compile-simple-expression return e)
   (cond
-    ((number? e) (return (format "%d" e)))
-    ((string? e) (return (format "%q" e)))
-    ((symbol? e) (return (format "var(%s, %q)" (escape-symbol e) (car e))))
+    ((number? e)  (return (format "%d" e)))
+    ((string? e)  (return (format "%q" e)))
+    ((keyword? e) (error "use of keyword in expression position: " e))
+    ((symbol? e)  (return (format "var(%s, %q)" (escape-symbol e) (car e))))
     ((= e #t) (return "true"))
     ((= e #f) (return "false"))
     ((= e #eof) (return "scm_eof"))
@@ -34,6 +37,7 @@
 
 (define (compile-quote return e)
   (cond
+    ((keyword? e) (return (format "keyword('%s')" (car e))))
     ((symbol? e) (return (format "symbol('%s')" (car e))))
     ((pair? e)
      (return (format "{%s,%s}"
@@ -52,7 +56,7 @@
   (if (null? args)
     empty
     (if (symbol? (car args))
-      (format "%s%s%s"
+      (format "%s %s %s"
          (escape-symbol (car args))
          (if (and (null? (cdr args)) (eq? empty "")) "" ", ")
          (simple-argument-list empty (cdr args)))
@@ -116,7 +120,7 @@
     ""
     (if (define? (car alist))
       (error "illegal define expression" (car alist) "in argument list")
-      (format "%s%s%s"
+      (format "%s%s %s"
               (compile-expr (lambda (x) x) (car alist))
               (if (null? (cdr alist)) "" ", ")
               (compile-args (cdr alist))))))
@@ -170,7 +174,7 @@
   `(begin
      (if booting
        (write #\newline ,r #\newline))
-     (call/native 'load ,r)))
+     ((call/native 'load ,r))))
 
 (run/native
    "function var(x, n)
@@ -248,6 +252,7 @@
 (define/native (null? p) "return _p == scm_nil or _p == nil")
 (define/native (number? p) "return type(_p) == 'number'")
 (define/native (string? p) "return type(_p) == 'string'")
+(define/native (keyword? p) "return _symbolS63(_p) and _p.kw ~= nil")
 (define/native (char? p) "return type(_p) == 'string' and #_p == 1")
 
 (define/native (eq? a b)
@@ -264,7 +269,8 @@
   ")
 (define/native (defined? s) "return _symbolS63(s) and _ENV[s[1]]")
 
-(if (= platform "Boot Scheme")
+(if (or (eq? platform "Scheme 51")
+        (eq? platform "Boot Scheme"))
   (run/native "_platform = 'Scheme 51'")
   (run/native "_platform = 'Boot Scheme'"))
 
@@ -299,12 +305,12 @@
       (if (eq? x #eof)
         (write "end-of-file\n")
         (begin
-          (write (compile-expr (lambda (x) (format "ignore(%s)" x)) x))
+          (write (compile-expr (lambda (x) (format "ignore(%s)" x))
+                               (expand x)))
           (loop)))))
   (with-input-from-file path loop))
 
-(if (= platform "Scheme 51")
-  (define load compiler-load))
+(define load compiler-load)
 
 (define (run path)
   (with-input-from-file path (lambda () (repl #f 0))))
