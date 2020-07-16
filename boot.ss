@@ -164,20 +164,13 @@
 
 (define else #t)
 
-(if (not (or (eq? platform "Scheme 51")
-             (eq? platform "Boot Scheme")))
-  (let ((start (call/native '(os clock))))
-    (if booting
-      (write "local function ignore(x) end\n"))
+(if booting
+  (begin
+    (write "local function ignore(x) end\n")
+    (load "case.ss")
     (load "compiler.ss")
-    (compiler-load "boot.ss")
-    (compiler-load "case.ss")
-    (compiler-load "compiler.ss")
-    (if (not booting)
-      (begin
-        (write "Loaded (took " (- (call/native '(os clock)) start) "s).\n")
-        (((call/native 'load "return _repl")) #t 1)))
+    (compile-file "boot.ss")
+    (compile-file "case.ss")
+    (compile-file "compiler.ss")
     (exit))
   #t)
-
-1

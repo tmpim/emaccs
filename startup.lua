@@ -8,6 +8,12 @@ if not table.pack then
   end
 end
 
+if not load then
+  function _G.load(string, source, mode, env)
+    return setfenv(loadstring(string), env)
+  end
+end
+
 if not write then
   function write(x)
     return io.write(tostring(x))
@@ -380,7 +386,7 @@ function eval(expr, env, okk, errk)
     return okk({[0]=eval,expr[2][1],env,expr[2][2]})
   elseif consp(expr) and expr[1] == _if then
     return eval(expr[2][1], env, function(c)
-      if c ~= false and c ~= scm_nil then
+      if c ~= false then
         return eval(expr[2][2][1], env, okk, errk)
       elseif expr[2][2][2] == scm_nil then
         return okk(false)
@@ -596,7 +602,7 @@ local scm_env = {
   ['set-cdr!'] = function(p, x)
     p[2] = x
   end,
-  ['null?'] = function(p) return p == scm_nil end,
+  ['null?'] = function(p) return p == scm_nil or p == nil end,
   load = { [0] = callproc, scm_load },
   ['call/native'] = function(s, ...)
     if symbolp(s) then
