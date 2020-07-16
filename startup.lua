@@ -539,7 +539,7 @@ local function scm_load(okk, errk, env, path)
       elseif err == scm_eof then
         input_file = nil
         h:close()
-        return okk(i)
+        return okk(true)
       else
         input_file = nil
         h:close()

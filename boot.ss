@@ -163,14 +163,3 @@
   (expand cases))
 
 (define else #t)
-
-(if booting
-  (begin
-    (write "local function ignore(x) end\n")
-    (load "case.ss")
-    (load "compiler.ss")
-    (compile-file "boot.ss")
-    (compile-file "case.ss")
-    (compile-file "compiler.ss")
-    (exit))
-  #t)
