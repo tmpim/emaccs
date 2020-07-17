@@ -637,6 +637,13 @@ local scm_env = {
   gensym = function()
     gensym_counter = gensym_counter + 1
     return mksymbol("#." .. gensym_counter)
+  end,
+  ['hash-ref'] = function(table, key, default)
+    if not table[key] then
+      return default or false
+    else
+      return table[key]
+    end
   end
 }
 

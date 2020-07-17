@@ -19,9 +19,6 @@
                 'load
                 "return function(s) return 'S' .. string.byte(s) end")))))
 
-(define (make-hash-table)
-  ((call/native 'load "return {}")))
-
 (define variables-in-scope (list (make-hash-table)))
 
 (define (enter-scope)
@@ -44,10 +41,10 @@
     ((string? e)  (return (format "%q" e)))
     ((keyword? e) (error "use of keyword in expression position: " e))
     ((symbol? e)
-     (if (not (null? (call/native 'rawget (car variables-in-scope) (escape-symbol e))))
+     (if (hash-ref (car variables-in-scope) (escape-symbol e))
        (return (escape-symbol e))
        (begin
-         (call/native 'rawset (car variables-in-scope) (escape-symbol e) #t)
+         (hash-set! (car variables-in-scope) (escape-symbol e) #t)
          (return (format "var(%s, %q)" (escape-symbol e) (car e))))))
     ((= e #t) (return "true"))
     ((= e #f) (return "false"))
@@ -233,7 +230,7 @@
 
 (run/native
   "function list(car, ...)
-     if car then
+     if car ~= nil then
        return { car, list(...) }
      else
        return scm_nil
@@ -266,7 +263,7 @@
             (car (car (cadr e)))
             (car (cadr e)))
         "[expr]"))
-  (call/native 'load (compile e) name "t" *global-environment*))
+  (call/native 'load (in-scope (compile e)) name "t" *global-environment*))
 
 (define (compile-and-run e)
   ((compile-and-load e)))
@@ -300,6 +297,8 @@
 (define/native (keyword? p) "return _symbolS63(_p) and _p.kw ~= nil")
 (define/native (char? p) "return type(_p) == 'string' and #_p == 1")
 (define/native (cons a b) "return {_a,_b}")
+(define/native (hash-ref t k def)
+  "if _t[_k] ~= nil then return _t[_k] else return _def or false end")
 
 (define/native (eq? a b)
   "if _a == _b then
@@ -357,6 +356,7 @@
   (with-input-from-file path loop))
 
 (define load compiler-load)
+(define eval compile-and-run)
 
 (define (run path)
   (with-input-from-file path (lambda () (repl #f 0))))

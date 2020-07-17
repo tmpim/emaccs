@@ -63,7 +63,7 @@
   (define args (gensym))
   (define (expand-rules name rules)
     (if (null? rules)
-      `(error "no matching syntax rules for" name)
+      `(error "no matching syntax rules for" ,name)
       (let ((pattern (cdr (caar rules)))
             (body (cdar rules)))
         (if (eq? (car (caar rules)) name)
@@ -76,5 +76,5 @@
            (,pattern . ,body)
            (else ,(expand-rules name (cdr rules)))))))
   (define name (car (caar rules)))
-  `(define-syntax (,name . ,args)
+  `(lambda ,args
      ,(expand-rules name rules)))

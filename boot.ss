@@ -11,17 +11,20 @@
 
 (define list (lambda x x))
 
-(define macros '())
+(define (make-hash-table) ((call/native 'load "return {}")))
+(define (hash-set! table key value) (call/native 'rawset table key value))
+
+(define macros (make-hash-table))
+(define symbol-macros (make-hash-table))
 
 (define (push-macro! name expander)
-  (set! macros (cons (cons name expander) macros)))
+  (hash-set! macros (car name) expander))
+
+(define (push-symbol-macro! name expander)
+  (hash-set! symbol-macros (car name) expander))
 
 (define (lookup-macro-in symbol table)
-  (if (null? table)
-      #f
-      (if (= (caar table) symbol)
-        (cdar table)
-        (lookup-macro-in symbol (cdr table)))))
+  (hash-ref table (car symbol)))
 
 (define (make-lambda args body)
   (cons 'lambda (cons args body)))
@@ -62,24 +65,34 @@
         #f)
    (if (eq? (car s) 'quote)
      s
-     (if (eq? (car s) 'lambda)
-       (make-lambda (cadr s)
-                    (expand/helper
-                      (append (if (symbol? (cadr s))
-                                  (list (cadr s))
-                                  (cadr s))
-                              shadow)
-                      (cddr s)))
-       ((lambda (m-entry)
-          (if m-entry
-            (expand/helper shadow (m-entry (cdr s)))
-            (cons (expand/helper shadow (car s))
-                  (expand/helper shadow (cdr s)))))
-        (lookup-macro-in (car s) macros))))
+     (if (eq? (car s) 'unquote)
+       (eval (cadr s))
+       (if (eq? (car s) 'lambda)
+         (make-lambda (cadr s)
+                      (expand/helper
+                        (append (if (symbol? (cadr s))
+                                    (list (cadr s))
+                                    (cadr s))
+                                shadow)
+                        (cddr s)))
+         ((lambda (m-entry)
+            (if m-entry
+              (expand/helper shadow (m-entry (cdr s)))
+              (cons (expand/helper shadow (car s))
+                    (expand/helper shadow (cdr s)))))
+          (lookup-macro-in (car s) macros)))))
    (if (pair? s)
      (cons (expand/helper shadow (car s))
            (expand/helper shadow (cdr s)))
-     s)))
+     (if (if (symbol? s)
+           (not (member s shadow))
+           #f)
+       ((lambda (m-entry)
+          (if m-entry
+            (m-entry)
+            s))
+        (lookup-macro-in s symbol-macros))
+       s))))
 
 (define (expand s)
   (expand/helper '() s))
@@ -148,7 +161,10 @@
                       ,(make-lambda
                          (list macro-args)
                          `((apply ,(make-lambda args body) ,macro-args)))))
-      (error "bad define-syntax"))))
+      (if (symbol? (car macro-arguments))
+        (push-macro! ',(car macro-arguments)
+                      ,(cadr macro-arguments))
+        (error "bad define-syntax")))))
 
 (push-macro! 'begin (lambda (macro-arguments)
                       `(,(make-lambda '() macro-arguments))))
@@ -161,5 +177,26 @@
          ,(cons 'begin (cdar cases))
          ,(expand (cdr cases)))))
   (expand cases))
+
+(define (make-parameter . initval)
+  (let ((cell (or (car initval) #f)))
+    (lambda args
+      (if (null? args)
+        cell
+        (begin
+          (set! cell (car args))
+          cell)))))
+
+(define-syntax (parameterise vars . body)
+  (if (null? vars)
+    `(begin . ,body)
+    (begin
+      (define saved (gensym))
+      (define rv (gensym))
+      `(let ((,saved (,(caar vars))))
+         (,(caar vars) (begin . ,(cdar vars)))
+         (let ((,rv (parameterise ,(cdr vars) . ,body)))
+           (,(caar vars) ,saved)
+           ,rv)))))
 
 (define else #t)
