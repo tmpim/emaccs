@@ -14,7 +14,7 @@
   (format "_%s"
           (call/native '(string gsub)
              (car e)
-             "[#+-?!=><*/]"
+             "[^%w_]"
              ((call/native
                 'load
                 "return function(s) return 'S' .. string.byte(s) end")))))
@@ -299,6 +299,11 @@
 (define/native (cons a b) "return {_a,_b}")
 (define/native (hash-ref t k def)
   "if _t[_k] ~= nil then return _t[_k] else return _def or false end")
+(define/native (call-with-values pro con) "return _con(_pro())")
+(run/native
+  "function _values(...)
+     return ...
+   end")
 
 (define/native (eq? a b)
   "if _a == _b then
@@ -333,17 +338,6 @@
 
 (define *loaded-modules* '())
 
-(define (compiler-load path)
-  (if (not (eq? (call/native 'rawget *loaded-modules* path)
-                (call/native 'rawget *loaded-modules* *loaded-modules*)))
-    (write "Already compiled " path #\newline)
-    (begin
-      (if (not booting)
-        (write "Compiling " path #\newline))
-      (with-input-from-file path (lambda () (repl #f 0)))
-      (call/native 'rawset *loaded-modules* path #t)
-      #t)))
-
 (define (compile-file path)
   (define (loop)
     (let ((x (read)))
@@ -355,8 +349,7 @@
           (loop)))))
   (with-input-from-file path loop))
 
-(define load compiler-load)
 (define eval compile-and-run)
 
-(define (run path)
+(define (load path)
   (with-input-from-file path (lambda () (repl #f 0))))

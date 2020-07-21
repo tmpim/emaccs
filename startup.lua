@@ -277,7 +277,9 @@ local function consp(e)
   return type(e) == 'table' and #e == 2
 end
 
+--{{{
 local eval, apply, callproc, eval_args, apply_dispatch
+--}}}
 
 local function scm_print(e)
   if type(e) == 'table' then
@@ -337,6 +339,7 @@ local function is_self_eval(e)
       or e == scm_eof
       or e == nil
 end
+--{{{
 
 local function throw(errk, ...)
   return errk({[0]='error', ...})
@@ -455,12 +458,12 @@ function apply(fun, args, env, okk, errk)
   return eval_args(args, env, function(args)
     local fa, fb = fun[1], fun[3]
     local fenv = { make_env(fa, args, {}), { fun[2][1], env } }
-    local function eval_body(b, acc)
+    local function eval_body(b, acc, ...)
       if b == scm_nil then
-        return okk(acc or false)
+        return okk((acc or false), ...)
       else
-        return eval(b[1], fenv, function(x)
-          return eval_body(b[2], x)
+        return eval(b[1], fenv, function(...)
+          return eval_body(b[2], ...)
         end, errk)
       end
     end
@@ -500,7 +503,7 @@ function apply_dispatch(f, args, env, okk, errk)
 end
 
 function eval_args(args, env, okk, errk)
-  if args == scm_nil then
+  if args == scm_nil or args == nil then
     return okk(scm_nil)
   elseif args[0] == eval_args then
     return okk(args[1])
@@ -562,10 +565,12 @@ local function scm_eq(a, b)
   end
   return false
 end
+--}}}
 
 local gensym_counter = 0
 
 local scm_env = {
+--{{{
   ['call/cc'] = {
     [0] = callproc,
     function(okk, errk, env, f)
@@ -645,7 +650,9 @@ local scm_env = {
       return table[key]
     end
   end
+--}}}
 }
+--{{{
 
 local function defproc(name, thnk)
   scm_env[name] = { [0] = callproc, thnk }
@@ -707,6 +714,25 @@ defproc('/', function(ok, err, env, ...)
     end
     return ok(x)
   end
+end)
+
+defproc('values', function(ok, err, env, ...)
+  return ok(...)
+end)
+
+defproc('call-with-values', function(ok, err, env, producer, consumer)
+  local function listify(car, ...)
+    if car ~= nil then
+      return {{_quote, {car, scm_nil}}, listify(...)}
+    else
+      return scm_nil
+    end
+  end
+  return apply_dispatch(producer, scm_nil, env, function(...)
+    print(...)
+    local l = listify(...)
+    return apply_dispatch(consumer, l, env, ok, err)
+  end, err)
 end)
 
 defproc('call-with-prompt', function(okk, errk, env, tag, thunk, handler)
@@ -809,6 +835,7 @@ elseif jit then
 else
   scm_env.platform = mksymbol('puc-lua')
 end
+--}}}
 
 _G._read      = read_sexpr
 _G.scm_nil    = scm_nil
@@ -864,7 +891,9 @@ function _G.var(x, n)
   return error("no binding for symbol " .. n, 2)
 end
 
+--{{{
 dofile 'operators.lua'
+--}}}
 
 return scm_load(repl, function(x)
   print('error while scm_loading boot file:')

@@ -57,24 +57,12 @@
 
 (define-syntax (case-lambda . cases)
   (define name (gensym))
-  `(lambda ,name (case ,@cases)))
+  `(lambda ,name (case ,name . ,cases)))
 
-(define-syntax (syntax-rules . rules)
-  (define args (gensym))
-  (define (expand-rules name rules)
-    (if (null? rules)
-      `(error "no matching syntax rules for" ,name)
-      (let ((pattern (cdr (caar rules)))
-            (body (cdar rules)))
-        (if (eq? (car (caar rules)) name)
-          #t
-          (error "mismatch between rule name"
-                 name
-                 "and pattern"
-                 (caar rules)))
-        `(case ,args
-           (,pattern . ,body)
-           (else ,(expand-rules name (cdr rules)))))))
-  (define name (car (caar rules)))
-  `(lambda ,args
-     ,(expand-rules name rules)))
+(define-syntax let-values
+  (case-lambda
+    [(() . body) `(begin . ,body)]
+    [(((names expr) . rest) . body)
+     `(call-with-values (lambda () ,expr)
+                        (lambda ,names
+                          (let-values ,rest . ,body)))]))

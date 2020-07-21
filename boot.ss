@@ -162,8 +162,9 @@
                          (list macro-args)
                          `((apply ,(make-lambda args body) ,macro-args)))))
       (if (symbol? (car macro-arguments))
-        (push-macro! ',(car macro-arguments)
-                      ,(cadr macro-arguments))
+        (let ((arg (gensym)))
+          `(push-macro! ',(car macro-arguments)
+                         (lambda (,arg) (apply ,(cadr macro-arguments) ,arg))))
         (error "bad define-syntax")))))
 
 (push-macro! 'begin (lambda (macro-arguments)
