@@ -168,7 +168,7 @@ local function read_character()
   end
 end
 
-local scm_nil, scm_eof = {}, {}
+local scm_nil, scm_eof, eval, callproc = {}, {}, {}, {}
 
 local function read_special_atom()
   local ch = getchar()
@@ -851,6 +851,7 @@ function _G._write(...)
   for i = 1, t.n do
     scm_print(t[i])
   end
+  return true
 end
 scm_env.read  = read_sexpr
 

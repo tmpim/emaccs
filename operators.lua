@@ -46,11 +46,15 @@ function _callS47native(s, ...)
   if _symbolS63(s) then
     return _G[s[1]](...)
   else
-    local o = _G
+    local o, path = _G, "_G"
     repeat
       o = o[s[1][1]]
+      path = path .. "." .. s[1][1]
       s = s[2]
     until not _pairS63(s)
+    if not o then
+      error("No such procedure: " .. path)
+    end
     return o(...)
   end
 end

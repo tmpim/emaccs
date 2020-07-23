@@ -200,4 +200,16 @@
            (,(caar vars) ,saved)
            ,rv)))))
 
+(define make-hash-table
+  (let ((empty-hash make-hash-table))
+    (define (go table args)
+      (if (null? args)
+        table
+        (begin
+          (hash-set! table (caar args) (cdar args))
+          (go table (cdr args)))))
+    (lambda args
+      (define table (empty-hash))
+      (go table args))))
+
 (define else #t)
