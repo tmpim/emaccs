@@ -81,11 +81,6 @@ function _gensym()
 end
 
 function _error(...)
-  local t = table.pack(...)
-  for i = 1, t.n do
-    _write(t[i])
-    io.write ' '
-  end
   return error(list(...))
 end
 

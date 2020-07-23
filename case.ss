@@ -66,3 +66,17 @@
      `(call-with-values (lambda () ,expr)
                         (lambda ,names
                           (let-values ,rest . ,body)))]))
+
+(define-syntax let
+  (case-lambda
+    [((name ((name1 init1) . vars) . body) #:when (symbol? name))
+     `(begin
+        (define ,name
+          (lambda (,name1 . ,(map car vars))
+            . ,body))
+        (,name ,init1 . ,(map cadr vars)))]
+    [(((name1 init1) . vars) . body)
+     `((lambda (,name1 . ,(map car vars))
+         . ,body)
+       ,init1 . ,(map cadr vars))]
+    [(() . body) `(begin . ,body)]))

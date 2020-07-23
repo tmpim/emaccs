@@ -662,6 +662,18 @@ defproc('apply', function(ok, err, env, fun, args)
   return apply_dispatch(fun, {[0]=eval_args,args}, env, ok, err)
 end)
 
+defproc('procedure?', function(ok, err, env, f)
+  if type(f) == 'table' and f[0] == eval then
+    return ok(true)
+  elseif type(f) == 'table' and f[0] == callproc then
+    return ok(true)
+  elseif type(f) == 'function' then
+    return ok(true)
+  else
+    return ok(false)
+  end
+end)
+
 defproc('error', function(ok, err, env, ...)
   return throw(err, ...)
 end)
@@ -783,6 +795,21 @@ defproc('with-input-from-file', function(ok, err, env, p, f)
     return throw(err, 'failed to open', p, 'for reading')
   end
 end)
+
+local function hash_for_each(ok, err, env, hash, func, k1, n)
+  local k, v = next(hash, k1)
+  local n = n or 0
+  if k == nil then
+    return ok(n)
+  else
+    local args = {{_quote, {k, scm_nil}}, {{_quote, {v, scm_nil}}, scm_nil}}
+    return apply_dispatch(func, args, env, function(v)
+      return hash_for_each(ok, err, env, hash, func, k, n + 1)
+    end)
+  end
+end
+
+defproc('hash-for-each', hash_for_each)
 
 local function repl()
   if term then

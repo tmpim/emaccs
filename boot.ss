@@ -13,6 +13,11 @@
 
 (define (make-hash-table) ((call/native 'load "return {}")))
 (define (hash-set! table key value) (call/native 'rawset table key value))
+(define (copy-hash-table table)
+  (define x (make-hash-table))
+  (hash-for-each table (lambda (k v)
+                         (hash-set! x k v)))
+  x)
 
 (define macros (make-hash-table))
 (define symbol-macros (make-hash-table))
@@ -65,22 +70,25 @@
         #f)
    (if (eq? (car s) 'quote)
      s
-     (if (eq? (car s) 'unquote)
-       (eval (cadr s))
-       (if (eq? (car s) 'lambda)
-         (make-lambda (cadr s)
-                      (expand/helper
-                        (append (if (symbol? (cadr s))
-                                    (list (cadr s))
-                                    (cadr s))
-                                shadow)
-                        (cddr s)))
-         ((lambda (m-entry)
-            (if m-entry
-              (expand/helper shadow (m-entry (cdr s)))
-              (cons (expand/helper shadow (car s))
-                    (expand/helper shadow (cdr s)))))
-          (lookup-macro-in (car s) macros)))))
+     (if (and (eq? (car s) '#:prim)
+              (symbol? (cadr s)))
+       (cadr s)
+       (if (eq? (car s) 'unquote)
+         (eval (cadr s))
+         (if (eq? (car s) 'lambda)
+           (make-lambda (cadr s)
+                        (expand/helper
+                          (append (if (symbol? (cadr s))
+                                      (list (cadr s))
+                                      (cadr s))
+                                  shadow)
+                          (cddr s)))
+           ((lambda (m-entry)
+              (if m-entry
+                (expand/helper shadow (m-entry (cdr s)))
+                (cons (expand/helper shadow (car s))
+                      (expand/helper shadow (cdr s)))))
+            (lookup-macro-in (car s) macros))))))
    (if (pair? s)
      (cons (expand/helper shadow (car s))
            (expand/helper shadow (cdr s)))
@@ -212,4 +220,24 @@
       (define table (empty-hash))
       (go table args))))
 
+(define (length l . a)
+  (cond
+    ((null? a) (length l 0))
+    ((null? l) (car a))
+    ((pair? l) (length (cdr l) (+ 1 (car a))))))
+
 (define else #t)
+
+(define safe (make-parameter #t))
+
+(define (eval-if c . body)
+  (if (eval c)
+    `(begin . ,body)
+    #f))
+
+(define-syntax (check-parameter val pred? func)
+  (if (safe)
+    `(if (not (,pred? ,val))
+       (error
+         "In function " ',func ": the argument " ',val
+         "was expected to be a " ',pred?))))

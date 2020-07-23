@@ -21,19 +21,40 @@
 
 (define variables-in-scope (list (make-hash-table)))
 
-(define (enter-scope)
-  (set! variables-in-scope (cons (make-hash-table) variables-in-scope)))
+(define (remove-variables-from-scope x)
+  (cond
+    ((pair? x)
+     (remove-variables-from-scope (car x))
+     (remove-variables-from-scope (cdr x)))
+    ((symbol? x)
+     (hash-set! (car variables-in-scope)
+                (escape-symbol x)
+                #f))))
+
+(define (enter-scope vars)
+  (set! variables-in-scope
+    (cons (copy-hash-table (car variables-in-scope))
+          variables-in-scope))
+  (remove-variables-from-scope vars))
 
 (define (leave-scope)
   (set! variables-in-scope (cdr variables-in-scope)))
 
-(define-syntax (in-scope . body)
+(define-syntax (in-scope syms . body)
   (define s (gensym))
   `(begin
-     (enter-scope)
+     (enter-scope ,syms)
      (let ((,s (begin . ,body)))
        (leave-scope)
        ,s)))
+
+(define (warn . rest)
+  (apply write `("-- Warning: " ,@rest #\newline)))
+
+(define-syntax (warn-redefinition name)
+  `(warn "redefinition of built-in function "
+         ,name
+         " will not take effect for saturated applications"))
 
 (define (compile-simple-expression return e)
   (cond
@@ -90,20 +111,22 @@
        (cons (cons (car args) (car r)) (cdr r))))))
 
 (define (compile-lambda return args body)
-  (in-scope (cond
-             ((list? args)
-              (return (format "(%s)\n %s\n end"
-                              (simple-argument-list "" args)
-                              (compile-body (lambda (x) (format "return %s" x)) body))))
-             (else
-               (let ((args-and-rest (complex-argument-list args)))
-                 (let ((proper (car args-and-rest))
-                       (rest (cdr args-and-rest)))
-                   (return (format "(%s)\n local %s = list(...);\n %s\n end"
-                                   (simple-argument-list "..." proper)
-                                   (escape-symbol rest)
-                                   (compile-body (lambda (x) (format "return %s" x))
-                                                 body)))))))))
+  (in-scope args
+    (cond
+     ((list? args)
+      (return (format "(%s)\n %s\n end"
+                      (simple-argument-list "" args)
+                      (compile-body (lambda (x) (format "return %s" x)) body))))
+     (else
+       (let ((args-and-rest (complex-argument-list args)))
+         (let ((proper (car args-and-rest))
+               (rest (cdr args-and-rest)))
+           (hash-set! (car variables-in-scope) (car rest) #t)
+           (return (format "(%s)\n local %s = list(...);\n %s\n end"
+                           (simple-argument-list "..." proper)
+                           (escape-symbol rest)
+                           (compile-body (lambda (x) (format "return %s" x))
+                                         body)))))))))
 
 (define (atomic? p)
   (or (number? p) (string? p)
@@ -148,12 +171,41 @@
 (define (builtin-function? s)
   (or (= s 'cons) (= s 'car) (= s 'cdr)))
 
+(define-syntax (warn-extra-arguments rest expr)
+  (define temp (gensym))
+  `(if (not (null? ,rest))
+     (let ((,name ,expr))
+       (warn "Potentially too many arguments for function" (car ,name) ,name))))
+
+(define compilation-rules (make-hash-table))
+
+(define-syntax (define-compilation-rule name . body)
+  `(hash-set! compilation-rules ,(caar name)
+              (cons ,(length (cdr name))
+                    (lambda ,(cdr name) .  ,body))))
+
 (define (compile-builtin-function func args)
-  (case func
-    ['cons (format "{%s,%s}" (compile-expr (lambda (x) x) (car args))
-                             (compile-expr (lambda (x) x) (cadr args)))]
-    ['car (format "(%s)[1]" (compile-expr (lambda (x) x) (car args)))]
-    ['cdr (format "(%s)[2]" (compile-expr (lambda (x) x) (car args)))]))
+  (define (fallback)
+    (format "%s(%s)" (compile-expr (lambda (x) x) func)
+                     (compile-args args)))
+  (let ((rules (hash-ref compilation-rules (car func))))
+    (cond
+      [(and (pair? rules)
+            (procedure? (cdr rules)))
+       (if (= (length args) (car rules))
+         (apply (cdr rules) args)
+         (begin
+           (warn "Incorrect number of arguments to " func " (expected "
+                 (car rules) " got, " (length args) ")")
+           (fallback)))]
+      [else (fallback)])))
+
+(define-compilation-rule (car arg) (compile-expr (lambda (x) (format "(%s)[1]" x)) arg))
+(define-compilation-rule (cdr arg) (compile-expr (lambda (x) (format "(%s)[2]" x)) arg))
+(define-compilation-rule (cons head tail)
+  (format "{%s, %s}"
+          (compile-expr (lambda (x) x) head)
+          (compile-expr (lambda (x) x) tail)))
 
 (define (compile-expr return expr . is-tail)
   (case expr
@@ -164,9 +216,8 @@
        (compile-lambda (lambda (x) (ret (format "(function%s)" x))) args body))]
     [(('define name value) #:when (symbol? name))
      (call/native 'rawset (car variables-in-scope) (escape-symbol name) #t)
-     (if (builtin-function? name)
-       (write "-- Compiler warning: redefinition of builtin " name
-              " will not take effect for saturated applications\n"))
+     ; (if (builtin-function? name)
+     ;   (warn-redefinition name))
      (format "%s;\n %s"
              (compile-expr
                (lambda (v) (format "%s = %s" (escape-symbol name) v))
@@ -175,9 +226,8 @@
     [('define (name . args) . body)
      (compile-expr return `(define ,name (lambda ,args . ,body)))]
     [('set! name expr)
-     (if (builtin-function? name)
-       (write "-- Compiler warning: redefinition of builtin " name
-              " will not take effect for saturated applications\n"))
+     ; (if (builtin-function? name)
+     ;   (warn-redefinition name))
      (let ((ret return))
        (compile-expr
            (lambda (v)
@@ -185,6 +235,8 @@
                    "(function()\n %s = scm_set_helper(%s, %s, %q);\n return %s\n end)()"
                    (escape-symbol name) (escape-symbol name) v (car name) (escape-symbol name))))
            expr))]
+    [('if c)
+     (error "If expression missing 'then' case: " `(if ,c))]
     [('if c t)
      (define it (escape-symbol (gensym)))
      (if (= (car is-tail) #t)
@@ -263,7 +315,7 @@
             (car (car (cadr e)))
             (car (cadr e)))
         "[expr]"))
-  (call/native 'load (in-scope (compile e)) name "t" *global-environment*))
+  (call/native 'load (in-scope '() (compile e)) name "t" *global-environment*))
 
 (define (compile-and-run e)
   ((compile-and-load e)))
@@ -295,6 +347,7 @@
 (define/native (number? p) "return type(_p) == 'number'")
 (define/native (string? p) "return type(_p) == 'string'")
 (define/native (keyword? p) "return _symbolS63(_p) and _p.kw ~= nil")
+(define/native (procedure? p) "return type(_p) == 'function'")
 (define/native (char? p) "return type(_p) == 'string' and #_p == 1")
 (define/native (cons a b) "return {_a,_b}")
 (define/native (hash-ref t k def)
@@ -304,6 +357,14 @@
   "function _values(...)
      return ...
    end")
+
+(define/native (hash-for-each hash func)
+  "local n = 0
+   for k, v in pairs(_hash) do
+     _func(k, v)
+     n = n + 1
+   end
+   return n")
 
 (define/native (eq? a b)
   "if _a == _b then
