@@ -70,8 +70,9 @@
         #f)
    (if (eq? (car s) 'quote)
      s
-     (if (and (eq? (car s) '#:prim)
-              (symbol? (cadr s)))
+     (if (if (eq? (car s) '#:prim)
+           (symbol? (cadr s))
+           #f)
        (cadr s)
        (if (eq? (car s) 'unquote)
          (eval (cadr s))
