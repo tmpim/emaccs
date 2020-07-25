@@ -34,6 +34,7 @@
 
 (define make-prompt-tag make-hash-table)
 (define *reset-tag (make-prompt-tag))
+(define default-prompt-tag (make-prompt-tag))
 
 (define-syntax (reset . body)
   `(call-with-prompt *reset-tag

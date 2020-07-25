@@ -1,8 +1,13 @@
+_G.add_rat = add_rat
+_G.over_rat = over_rat
+_G.times_rat = times_rat
+_G.minus_rat = minus_rat
+
 function _S43(...)
   local t = table.pack(...)
   local r = 0
   for i = 1, t.n do
-    r = r + t[i]
+    r = add_rat(r, t[i])
   end
   return r
 end
@@ -11,19 +16,21 @@ function _S42(...)
   local t = table.pack(...)
   local r = 1
   for i = 1, t.n do
-    r = r * t[i]
+    r = times_rat(r, t[i])
   end
   return r
 end
 
 function _S45(...)
   local t = table.pack(...)
-  if t.n < 1 then
+  if t.n == 0 then
     error("not enough arguments for operator (-)")
+  elseif t.n == 1 then
+    return minus_rat(0, t[1])
   else
     local r = t[1]
     for i = 2, t.n do
-      r = r - t[i]
+      r = minus_rat(r, t[i])
     end
     return r
   end
@@ -33,10 +40,12 @@ function _S47(...)
   local t = table.pack(...)
   if t.n < 1 then
     error("not enough arguments for operator (/)")
+  elseif t.n == 1 then
+    return over_rat(rational(1, 1), t[1])
   else
     local r = t[1]
     for i = 2, t.n do
-      r = r / t[i]
+      r = over_rat(r, t[i])
     end
     return r
   end
@@ -94,7 +103,7 @@ function _catch(thunk, handler)
 end
 
 function _pairS63(p)
-  return type(p) == 'table' and #p == 2
+  return type(p) == 'table' and #p == 2 and p[0] ~= rational
 end
 
 function _S62(...)

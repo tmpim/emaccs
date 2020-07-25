@@ -58,6 +58,7 @@
 
 (define (compile-simple-expression return e)
   (cond
+    ((rational? e) (return (format "rational(%d, %d)" (car e) (cdr e))))
     ((number? e)  (return (format "%d" e)))
     ((string? e)  (return (format "%q" e)))
     ((keyword? e) (error "use of keyword in expression position: " e))
@@ -268,6 +269,54 @@
                (compile-expr (lambda (x) x) fun)
                (compile-args args)))]))
 
+(define (compile-and-load e)
+  (define name
+    (if (define? e)
+        (if (pair? (cadr e))
+            (car (car (cadr e)))
+            (car (cadr e)))
+        "[expr]"))
+  (call/native 'load (in-scope '() (compile e)) name "t" *global-environment*))
+
+(define (compile-and-run e)
+  ((compile-and-load e)))
+
+(define (repl p i)
+  (if p
+    (cond
+      ((eq? platform "Boot Scheme") (write "boot> "))
+      ((eq? platform "Scheme 51") (write "> "))
+      (else (write "load> "))))
+  (let ((x (read)))
+    (if (eq? x #eof)
+      i
+      (catch (lambda ()
+               ((if p write (lambda (x) #f))
+                (compile-and-run x)
+                #\newline)
+               (repl p (+ 1 i)))
+            (lambda (e)
+              (write "Error in user code: " e #\newline)
+              (repl p i))))))
+
+(define *loaded-modules* '())
+
+(define (compile-file path)
+  (define (loop)
+    (let ((x (read)))
+      (if (eq? x #eof)
+        #t
+        (begin
+          (write (compile-expr (lambda (x) (format "ignore(%s)" x))
+                               (expand x)))
+          (loop)))))
+  (with-input-from-file path loop))
+
+(define eval compile-and-run)
+
+(define (load path)
+  (with-input-from-file path (lambda () (repl #f 0))))
+
 (define-syntax (run/native r)
   `(begin
      (if booting
@@ -308,43 +357,14 @@
 
 (run/native "_G._S42globalS45environmentS42 = _ENV")
 
-(define (compile-and-load e)
-  (define name
-    (if (define? e)
-        (if (pair? (cadr e))
-            (car (car (cadr e)))
-            (car (cadr e)))
-        "[expr]"))
-  (call/native 'load (in-scope '() (compile e)) name "t" *global-environment*))
-
-(define (compile-and-run e)
-  ((compile-and-load e)))
-
-(define (repl p i)
-  (if p
-    (cond
-      ((eq? platform "Boot Scheme") (write "boot> "))
-      ((eq? platform "Scheme 51") (write "> "))
-      (else (write "load> "))))
-  (let ((x (read)))
-    (if (eq? x #eof)
-      i
-      (catch (lambda ()
-               ((if p write (lambda (x) #f))
-                (compile-and-run x)
-                #\newline)
-               (repl p (+ 1 i)))
-            (lambda (e)
-              (write "Error in user code: " e #\newline)
-              (repl p i))))))
-
 (define/native (set-car! cell val) "_cell[1] = _val; return true")
 (define/native (car cell) "return _cell[1]")
 (define/native (set-cdr! cell val) "_cell[2] = _val; return true")
 (define/native (cdr cell) "return _cell[2]")
 
 (define/native (null? p) "return _p == scm_nil or _p == nil")
-(define/native (number? p) "return type(_p) == 'number'")
+(define/native (number? p)
+  "return type(_p) == 'number' or (type(_p) == 'table' and _p[0] == rational)")
 (define/native (string? p) "return type(_p) == 'string'")
 (define/native (keyword? p) "return _symbolS63(_p) and _p.kw ~= nil")
 (define/native (procedure? p) "return type(_p) == 'function'")
@@ -366,19 +386,8 @@
    end
    return n")
 
-(define/native (eq? a b)
-  "if _a == _b then
-     return true
-   elseif _pairS63(_a) and _pairS63(_b) then
-     return _eqS63(_a[1], _b[1]) and _eqS63(_a[2], _b[2])
-   elseif type(_a) == 'table' and (_a[0] == eval or _a[0] == callproc) then
-     return false
-   elseif type(_a) == 'table' and _a.kw and type(_b) == 'table' and _b.kw then
-     return _a[1] == _b[1]
-   end
-   return false
-  ")
-(define/native (defined? s) "return _symbolS63(s) and _ENV[s[1]]")
+(define/native (rational? p)
+  "return type(_p) == 'table' and _p[0] == rational")
 
 (if (or (eq? platform "Scheme 51")
         (eq? platform "Boot Scheme"))
@@ -397,20 +406,7 @@
 
 (run/native "_booting = false") ; compiler is never used for booting
 
-(define *loaded-modules* '())
-
-(define (compile-file path)
-  (define (loop)
-    (let ((x (read)))
-      (if (eq? x #eof)
-        #t
-        (begin
-          (write (compile-expr (lambda (x) (format "ignore(%s)" x))
-                               (expand x)))
-          (loop)))))
-  (with-input-from-file path loop))
-
-(define eval compile-and-run)
-
-(define (load path)
-  (with-input-from-file path (lambda () (repl #f 0))))
+(define/native (exact? n)
+  "return _rationalS63(_n) or (type(_n) == 'number' and select(2, math.modf(_n)) == 0)")
+(define/native (inexact? n)
+  "return type(_n) == 'number' and select(2, math.modf(_n)) ~= 0")

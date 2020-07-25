@@ -29,3 +29,10 @@
     `(begin
        (use-module ,(car mods))
        (use-modules . ,(cdr mods)))))
+
+(define-syntax (compile-modules . mods)
+  (if (null? mods)
+    #t
+    `(begin
+       (compile-file ,(path->string (car mods)))
+       (compile-modules . ,(cdr mods)))))

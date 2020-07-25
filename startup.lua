@@ -59,10 +59,36 @@ local function skip_spaces()
   return ch
 end
 
-local function read_number(acc)
+local function gcd(a, b)
+  if b == 0 then
+    return math.abs(a)
+  else
+    return gcd(b, a % b)
+  end
+end
+
+function rational(a, b)
+  assert(type(a) == 'number' and type(b) == 'number')
+  local c = gcd(a, b)
+  local d = math.floor(b/c)
+  if d == 0 then
+    return error("division by zero")
+  else
+    return {[0]=rational, math.floor(a/c), math.floor(b/c)}
+  end
+end
+
+local function read_number(acc, allow_dot)
+  local allow_dot = allow_dot == nil and true or false
   local ch = getchar()
   if '0' <= ch and ch <= '9' then
     return read_number(acc .. ch)
+  elseif ch == '.' and allow_dot then
+    local dec = read_number('', false)
+    return read_number(acc .. ch .. tostring(dec))
+  elseif ch == '/' and allow_dot then
+    local denom = read_number('', false)
+    return rational(tonumber(acc), tonumber(denom))
   else
     ungetchar(ch)
     return assert(tonumber(acc))
@@ -71,7 +97,7 @@ end
 
 local symbol_chars = {
   ['+'] = true, ['-'] = true, ['?'] = true, ['!'] = true, ['='] = true,
-  ['>'] = true, ['<'] = true, ['*'] = true
+  ['>'] = true, ['<'] = true, ['*'] = true, ['/'] = true
 }
 
 local function symbol_carp(ch)
@@ -258,6 +284,13 @@ function read_sexpr()
     return {_unquote, {read_sexpr(), scm_nil}}
   elseif ch <= '9' and ch >= '0' then
     return read_number(ch)
+  elseif ch == '-' then
+    local ch2 = peek()
+    if ch2 <= '9' and ch2 >= '0' then
+      return -read_number(ch)
+    else
+      return read_symbol(ch)
+    end
   elseif ch == '#' then
     return read_special_atom()
   elseif symbol_carp(ch) then
@@ -274,7 +307,7 @@ local function symbolp(e)
 end
 
 local function consp(e)
-  return type(e) == 'table' and #e == 2
+  return type(e) == 'table' and #e == 2 and e[0] ~= rational
 end
 
 --{{{
@@ -305,6 +338,10 @@ local function scm_print(e)
       write ('\'()')
     elseif e[0] == callproc then
       write '<procedure>'
+    elseif e[0] == rational then
+      write (tostring(e[1]))
+      write '/'
+      write (tostring(e[2]))
     elseif e == scm_eof then
       write '#eof'
     elseif e.kw then
@@ -334,7 +371,7 @@ local function is_self_eval(e)
       or type(e) == 'string'
       or type(e) == 'function'
       or type(e) == 'boolean'
-      or (type(e) == 'table' and e[0] == eval)
+      or (type(e) == 'table' and (e[0] == eval or e[0] == rational))
       or e == scm_nil
       or e == scm_eof
       or e == nil
@@ -552,6 +589,20 @@ local function scm_load(okk, errk, env, path)
     return scm_load_loop(0)
   end
 end
+--}}}
+--
+local function num2rat(x)
+  if type(x) == 'table' then
+    return x
+  else
+    return rational(x, 1)
+  end
+end
+
+local function bothnums(a, b)
+  return (type(a) == 'number' or (type(a) == 'table' and a[0] == rational))
+     and (type(b) == 'number' or (type(b) == 'table' and b[0] == rational))
+end
 
 local function scm_eq(a, b)
   if a == b then
@@ -562,10 +613,54 @@ local function scm_eq(a, b)
     return false
   elseif type(a) == 'table' and a.kw and type(b) == 'table' and b.kw then
     return a[1] == b[1]
+  elseif bothnums(a, b) then
+    local a = num2rat(a)
+    local b = num2rat(b)
+    return a[1] * b[2] == b[1] * a[2]
   end
   return false
 end
---}}}
+
+local function add_rat(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x + y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return rational(x[1] * y[2] + y[1] * x[2], x[2] * y[2])
+end
+
+local function minus_rat(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x - y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return rational(x[1] * y[2] + y[1] * x[2], x[2] * y[2])
+end
+
+local function times_rat(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x * y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return rational(x[1] * y[1], x[2] * y[2])
+end
+
+local function over_rat(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    if select(2, math.modf(x)) == 0 and select(2, math.modf(y)) == 0 then
+      return rational(x, y)
+    end
+    return x / y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  print(x[1] * y[2], x[2] * y[1])
+  return rational(x[1] * y[2], x[2] * y[1])
+end
+
 
 local gensym_counter = 0
 
@@ -584,7 +679,7 @@ local scm_env = {
     else
       local s = 0
       for i = 1, args.n do
-        s = s + args[i]
+        s = add_rat(s, args[i])
       end
       return s
     end
@@ -596,7 +691,7 @@ local scm_env = {
     else
       local s = 1
       for i = 1, args.n do
-        s = s * args[i]
+        s = times_rat(s, args[i])
       end
       return s
     end
@@ -632,7 +727,12 @@ local scm_env = {
     return symbolp(s) and s.kw ==  true
   end,
   ['string?'] = function(x) return type(x) == "string" end,
-  ['number?'] = function(x) return type(x) == "number" end,
+  ['number?'] = function(x)
+    return type(x) == "number" or (type(x) == 'table' and x[0] == rational)
+  end,
+  ['rational?'] = function(x)
+    return type(x) == 'table' and x[0] == rational
+  end,
   write = function(...)
     local a = table.pack(...)
     for i = 1, a. n do
@@ -649,7 +749,14 @@ local scm_env = {
     else
       return table[key]
     end
-  end
+  end,
+  ['exact?'] = function(n)
+    return (type(n) == 'table' and n[0] == rational)
+        or (type(n) == 'number' and select(2, math.modf(n)) == 0)
+  end,
+  ['inexact?'] = function(n)
+    return (type(n) == 'number' and select(2, math.modf(n)) ~= 0)
+  end,
 --}}}
 }
 --{{{
@@ -706,10 +813,12 @@ defproc('-', function(ok, err, env, ...)
   local a = table.pack(...)
   if a.n == 0 then
     return throw(err, 'insufficient arguments for -')
+  elseif a.n == 1 then
+    return minus_rat(0, a[1])
   else
     local x = a[1]
     for i = 2, #a do
-      x = x - a[i]
+      x = minus_rat(x, a[i])
     end
     return ok(x)
   end
@@ -719,10 +828,12 @@ defproc('/', function(ok, err, env, ...)
   local a = table.pack(...)
   if a.n == 0 then
     return throw(err, 'insufficient arguments for /')
+  elseif a.n == 1 then
+    return over_rat(1, a[1])
   else
     local x = a[1]
     for i = 2, #a do
-      x = x / a[i]
+      x = over_rat(x, a[i])
     end
     return ok(x)
   end
