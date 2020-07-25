@@ -8,6 +8,15 @@ if not table.pack then
   end
 end
 
+if not math.type then
+  function math.type(x)
+    if type(x) == 'number' then
+      return select(2, math.modf(x)) ~= 0 and 'float' or 'integer'
+    end
+    return nil
+  end
+end
+
 if not load then
   function _G.load(string, source, mode, env)
     return setfenv(loadstring(string), env)
@@ -624,6 +633,10 @@ end
 local function add_rat(x, y)
   if type(x) == 'number' and type(y) == 'number' then
     return x + y
+  elseif type(x) == 'table' and math.type(y) == 'float' then
+    return (y * x[2] + x[1]) / x[2]
+  elseif type(y) == 'table' and math.type(x) == 'float' then
+    return (x * y[2] + y[1]) / y[2]
   end
   local x = num2rat(x)
   local y = num2rat(y)
@@ -633,6 +646,10 @@ end
 local function minus_rat(x, y)
   if type(x) == 'number' and type(y) == 'number' then
     return x - y
+  elseif type(x) == 'table' and math.type(y) == 'float' then
+    return (y * x[2] - x[1]) / x[2]
+  elseif type(y) == 'table' and math.type(x) == 'float' then
+    return (x * y[2] - y[1]) / y[2]
   end
   local x = num2rat(x)
   local y = num2rat(y)
@@ -642,6 +659,10 @@ end
 local function times_rat(x, y)
   if type(x) == 'number' and type(y) == 'number' then
     return x * y
+  elseif type(x) == 'table' and math.type(y) == 'float' then
+    return (y * x[1]) / x[2]
+  elseif type(y) == 'table' and math.type(x) == 'float' then
+    return (x * y[1]) / y[2]
   end
   local x = num2rat(x)
   local y = num2rat(y)
@@ -650,14 +671,17 @@ end
 
 local function over_rat(x, y)
   if type(x) == 'number' and type(y) == 'number' then
-    if select(2, math.modf(x)) == 0 and select(2, math.modf(y)) == 0 then
+    if math.type(x) == 'integer' and math.type(x) == 'integer' then
       return rational(x, y)
     end
     return x / y
+  elseif type(x) == 'table' and math.type(y) == 'float' then
+    return x[1] / (x[2] * y)
+  elseif type(y) == 'table' and math.type(x) == 'float' then
+    return x / (y[1] * y[2])
   end
   local x = num2rat(x)
   local y = num2rat(y)
-  print(x[1] * y[2], x[2] * y[1])
   return rational(x[1] * y[2], x[2] * y[1])
 end
 
@@ -752,10 +776,10 @@ local scm_env = {
   end,
   ['exact?'] = function(n)
     return (type(n) == 'table' and n[0] == rational)
-        or (type(n) == 'number' and select(2, math.modf(n)) == 0)
+        or math.type(n) == 'integer'
   end,
   ['inexact?'] = function(n)
-    return (type(n) == 'number' and select(2, math.modf(n)) ~= 0)
+    return math.type(n) == 'float'
   end,
 --}}}
 }

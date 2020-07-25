@@ -109,7 +109,7 @@ end
 function _S62(...)
   local t = table.pack(...)
   if t.n < 2 then
-    error("not enough arguments for operator (-)")
+    error("not enough arguments for operator (>)")
   else
     for i = 1, t.n do
       if t[i + 1] and t[i] <= t[i + 1] then
@@ -123,10 +123,38 @@ end
 function _S60(...)
   local t = table.pack(...)
   if t.n < 2 then
-    error("not enough arguments for operator (-)")
+    error("not enough arguments for operator (<)")
   else
     for i = 1, t.n do
       if t[i + 1] and t[i] >= t[i + 1] then
+        return false
+      end
+    end
+    return true
+  end
+end
+
+function _S62S61(...)
+  local t = table.pack(...)
+  if t.n < 2 then
+    error("not enough arguments for operator (>=)")
+  else
+    for i = 1, t.n do
+      if t[i + 1] and t[i] < t[i + 1] then
+        return false
+      end
+    end
+    return true
+  end
+end
+
+function _S60S61(...)
+  local t = table.pack(...)
+  if t.n < 2 then
+    error("not enough arguments for operator (<=)")
+  else
+    for i = 1, t.n do
+      if t[i + 1] and t[i] > t[i + 1] then
         return false
       end
     end

@@ -231,11 +231,6 @@
 
 (define safe (make-parameter #t))
 
-(define (eval-if c . body)
-  (if (eval c)
-    `(begin . ,body)
-    #f))
-
 (define-syntax (check-parameter val pred? func)
   (if (safe)
     `(if (not (,pred? ,val))

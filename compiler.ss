@@ -59,7 +59,7 @@
 (define (compile-simple-expression return e)
   (cond
     ((rational? e) (return (format "rational(%d, %d)" (car e) (cdr e))))
-    ((number? e)  (return (format "%d" e)))
+    ((number? e)  (return (call/native 'tostring e)))
     ((string? e)  (return (format "%q" e)))
     ((keyword? e) (error "use of keyword in expression position: " e))
     ((symbol? e)
@@ -407,6 +407,7 @@
 (run/native "_booting = false") ; compiler is never used for booting
 
 (define/native (exact? n)
-  "return _rationalS63(_n) or (type(_n) == 'number' and select(2, math.modf(_n)) == 0)")
+  "return _rationalS63(_n) or math.type(_n) == 'integer'")
+
 (define/native (inexact? n)
-  "return type(_n) == 'number' and select(2, math.modf(_n)) ~= 0")
+  "return math.type(_n) == 'float'")
