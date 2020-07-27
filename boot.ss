@@ -23,10 +23,12 @@
 (define symbol-macros (make-hash-table))
 
 (define (push-macro! name expander)
-  (hash-set! macros (car name) expander))
+  (hash-set! macros (car name) expander)
+  #t)
 
 (define (push-symbol-macro! name expander)
-  (hash-set! symbol-macros (car name) expander))
+  (hash-set! symbol-macros (car name) expander)
+  #t)
 
 (define (lookup-macro-in symbol table)
   (hash-ref table (car symbol)))
@@ -156,7 +158,6 @@
     (if (and (pair? args) (null? (cdr args)))
       (quasiquote/helper #t (car args))
       (error "bad quasiquote"))))
-
 
 (push-macro! 'define-syntax
   (lambda (macro-arguments)

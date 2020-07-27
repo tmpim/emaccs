@@ -263,6 +263,8 @@ local function read_string(acc)
       return read_string(acc .. '\t')
     elseif ch == '"' then
       return read_string(acc .. '"')
+    elseif ch == '\\' then
+      return read_string(acc .. '\\')
     else
       error("unknown escape sequence " .. ch)
     end

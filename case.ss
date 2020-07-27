@@ -57,7 +57,7 @@
 
 (define-syntax (case-lambda . cases)
   (define name (gensym))
-  `(lambda ,name (case ,name . ,cases)))
+  `(lambda ,name (case ,name ,@cases (else (error "no matching case to call")))))
 
 (define-syntax let-values
   (case-lambda

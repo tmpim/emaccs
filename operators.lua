@@ -64,7 +64,11 @@ function _callS47native(s, ...)
     if not o then
       error("No such procedure: " .. path)
     end
-    return o(...)
+    local x = table.pack(pcall(o, ...))
+    if not x[1] then
+      return error(x[2])
+    end
+    return table.unpack(x, 2, x.n)
   end
 end
 

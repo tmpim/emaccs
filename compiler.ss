@@ -325,8 +325,8 @@
 
 (run/native
    "function var(x, n)
-      assert(x ~= nil, 'no binding for symbol ' .. n);
-      return x
+      if x ~= nil then return x end
+      return error('no binding for symbol ' .. n, 2)
     end")
 
 (run/native
