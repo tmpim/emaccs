@@ -3,6 +3,7 @@
 code () {
 cat <<EOF
 (define booting #t)
+(load "modules.ss")
 (load "compiler.ss")
 (begin
   (write "local function ignore(x) end" #\\newline)
@@ -11,6 +12,9 @@ cat <<EOF
   (compile-file "compiler.ss")
   (compile-file "modules.ss"))
 EOF
+if [ ! -z "$SCM_EXTRA" ]; then
+  echo "$SCM_EXTRA"
+fi
 }
 
 scm51=$(mktemp)

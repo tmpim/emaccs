@@ -237,3 +237,7 @@
        (error
          "In function " ',func ": the argument " ',val
          "was expected to be a " ',pred?))))
+
+(if (= platform 'computercraft)
+  (if (call/native '(fs exists) "scheme51.lua")
+    (call/native 'dofile "scheme51.lua")))

@@ -416,7 +416,6 @@ local reductions = 0
 
 function eval(expr, env, okk, errk)
   if _CC_DEFAULT_SETTINGS and reductions % (2^12) == 0 then
-    print('yielding after ' .. reductions .. ' reductions')
     os.queueEvent('x')
     os.pullEvent('x')
   end
@@ -1020,15 +1019,21 @@ scm_env.read  = read_sexpr
 local handles = {}
 
 function _G.redirect(p, t)
-  local h, i = io.open(p, 'r'), input_file
-  if h then
-    input_file = h
-    local r = t()
-    input_file = i
-    return r
-  else
-    return throw(err, 'failed to open', p, 'for reading')
+  if not p then
+    error('not p', 2)
   end
+  if type(p) == 'string' then
+    local h = io.open(p, 'r')
+    if not h then
+      return error('failed to open ' .. p .. ' for reading')
+    end
+    p = h
+  end
+  local i = input_file
+  input_file = p
+  local r = t()
+  input_file = i
+  return r
 end
 -- return repl()
 
@@ -1038,7 +1043,9 @@ else
   scm_env.booting = false
 end
 
-scm_env['*global-environment*'] = _G
+function scm_env.environment()
+  return _ENV
+end
 
 function _G.scm_set_helper(x, v, n)
   if not x then

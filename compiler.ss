@@ -276,7 +276,7 @@
             (car (car (cadr e)))
             (car (cadr e)))
         "[expr]"))
-  (call/native 'load (in-scope '() (compile e)) name "t" *global-environment*))
+  (call/native 'load (in-scope '() (compile e)) name "t" (environment)))
 
 (define (compile-and-run e)
   ((compile-and-load e)))
@@ -355,7 +355,8 @@
 (define (compile e)
   (compile-expr (lambda (x) (format "return %s" x)) (expand e)))
 
-(run/native "_G._S42globalS45environmentS42 = _ENV")
+(run/native "if not _ENV then _ENV = _G end")
+(define/native (environment) "return _ENV")
 
 (define/native (set-car! cell val) "_cell[1] = _val; return true")
 (define/native (car cell) "return _cell[1]")
@@ -396,13 +397,13 @@
 
 (define/native (with-input-from-file path thunk) "return redirect(_path, _thunk)")
 
-(if (not booting)
-  (run/native
-    "do
-      local h = assert(io.open('operators.lua', 'r'))
-      assert(load(h:read'*a'))()
-      h:close()
-     end"))
+; (if booting
+;   (run/native
+;     "do
+;       local h = assert(io.open('operators.lua', 'r'))
+;       assert(load(h:read'*a'))()
+;       h:close()
+;      end"))
 
 (run/native "_booting = false") ; compiler is never used for booting
 

@@ -69,7 +69,7 @@ function _callS47native(s, ...)
 end
 
 function _apply(f, t)
-  assert(_pairS63(t) or t == scm_nil)
+  assert(_pairS63(t) or t == scm_nil, "values to be applied must be a list")
   local args, n, i = {}, 0, 1
   while _pairS63(t) do
     args[i] = t[1]
