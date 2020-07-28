@@ -17,3 +17,10 @@
 (define (string-length s)
   (call/native '(string len) s))
 
+(define/native (string-match str pattern)
+  "return _str:match(_pattern) or false")
+
+(define/native (string-find str pattern)
+  "local start, fin = string.find(_str, _pattern)
+   return start and {start,fin} or false")
+

@@ -1,7 +1,7 @@
 (use-modules (scm-51 string)
              (scm-51 input)
              (scm-51 control)
-             (scm-51 gap-buffer)
+             (emaccs gap-buffer)
              (srfi srfi-17))
 
 (define (get-event-data)
@@ -27,10 +27,12 @@
 (define (bind key action)
   (hash-set! repl-key-bindings (hash-ref keys (car key)) action))
 
-(define (width) (call/native '(term getSize)))
+(define (width) (call-with-values
+                  (lambda () (call/native '(term getSize)))
+                  (lambda (x y) x)))
 
 (define (height) (call-with-values (lambda () (call/native '(term getSize)))
-                                   (lambda (x y) y)))
+                                   (lambda (x y) y))) 
 
 (define/native (over x y) "return _x / _y")
 (define/native (modulo x y) "return _x % _y")
@@ -57,20 +59,13 @@
 
 (define repl-history (make-hash-table))
 
-(define/native (string-match str pattern)
-  "return _str:match(_pattern) or false")
-
-(define/native (string-find str pattern)
-  "local start, fin = string.find(_str, _pattern)
-   return start and {start,fin} or false")
-
 (define held (make-hash-table '("shift" . #f) '("meta" . #f) '("control" . #f)))
 (define (modifier? k)
   (hash-ref (make-hash-table
               (cons (hash-ref keys "leftShift") "shift")
               (cons (hash-ref keys "rightShift") "shift")
-              (cons (hash-ref keys "leftControl") "control")
-              (cons (hash-ref keys "rightControl") "control")
+              (cons (hash-ref keys "leftCtrl") "control")
+              (cons (hash-ref keys "rightCtrl") "control")
               (cons (hash-ref keys "leftAlt") "meta")
               (cons (hash-ref keys "rightAlt") "meta"))
             k))
@@ -82,7 +77,7 @@
 (define (refresh-editor-shadow point)
   (case (complete-identifier point)
     [(complete . rest)
-     (set! shadow complete)]
+     (set! shadow (cons complete rest))]
     [t (set! shadow #f)]))
 
 (define (write-token line colour pattern)
@@ -91,7 +86,13 @@
      (call/native '(term setTextColour) (colour))
      (call/native '(term write) (string-slice line start end))
      (call/native '(term setTextColour) (text-colour))
-     (string-chop line (+ 1 end))]
+     (list (string-chop line (+ 1 end)) end)]
+    [else #f]))
+
+(define (make-token line colour pattern)
+  (case (string-find line pattern)
+    [(start . end)
+     (list (string-chop line (+ 1 end)) (string-slice line start end) end (colour))]
     [else #f]))
 
 (define (write-ident-token line)
@@ -108,64 +109,106 @@
           [else identifier-colour])))
      (call/native '(term write) (string-slice line start end))
      (call/native '(term setTextColour) (text-colour))
-     (string-chop line (+ 1 end))]
+     (list (string-chop line (+ 1 end)) end)]
     [else #f]))
 
 (define (write-highlighted line)
-  (if (> (string-length line) (repl-highlighting-limit))
-    (call/native '(term write) line)
-    (let loop ((line line))
-      (if (= line "")
-        #t
-        (loop (or (write-token line comment-colour    "^;.*")
-                  (write-token line string-colour     "^\".-[^\\]\"")
-                  (write-ident-token line)
-                  (write-token line literal-colour    "^[0-9]+")
-                  (write-token line literal-colour    "^#[tf]")
-                  (write-token line string-colour     "^#\\%w+")
-                  (write-token line text-colour       "^[^%w_]")
-                  "no match"))))))
+  (let loop ((line line))
+    (if (= line "")
+      #t
+      (apply loop (or (write-token line comment-colour    "^;.*")
+                      (write-token line string-colour     "^\".-[^\\]\"")
+                      (write-ident-token line)
+                      (write-token line literal-colour    "^[0-9]+")
+                      (write-token line literal-colour    "^#[tf]")
+                      (write-token line string-colour     "^#\\%w+")
+                      (write-token line text-colour       "^[^%w_]")
+                      (list ""))))))
+
+(define delimiters
+  (make-hash-table (cons " " #t)
+                   (cons "(" #t)
+                   (cons ")" #t)))
+
+(define (repaint)
+  #f)
+
+(define repaint-tasks '())
+
+(define (draw-editor-shadow)
+  (call/native '(term setTextColour) (shadow-colour))
+  (cond
+    ((pair? shadow)
+     (call/native '(term write) (car shadow)))
+    ((string? shadow)
+     (call/native '(term write) (car shadow)))
+    ((null? shadow) #f)
+    (else (write shadow)))
+  (call/native '(term setTextColour) (text-colour)))
 
 (define (interact-line)
   (define buffer (make-gap-buffer "" 1))
   (define y (call-with-values (lambda () (call/native '(term getCursorPos)))
                               (lambda (x y) y)))
+  (define needs-repaint #t)
+  (define (out-of-bounds)
+    (define usable (- (width) (string-length (repl-prompt)) 1))
+    (define len (string-length (string-append (car buffer) (cdr buffer))))
+    (> len usable))
+
+  (set! history-pos #f)
+  (set! repaint (case-lambda (() (set! needs-repaint #t))
+                             ((x) (set! needs-repaint #f))))
 
   (call/native '(term setCursorBlink) #t)
   (let loop ((ev (get-event-data)))
     ; clear the line and write the prompt
-    (call/native '(term clearLine))
-    (call/native '(term setCursorPos) 1 y)
-    (write-highlighted (repl-prompt))
-    (let ((str (string-append (car buffer) (cdr buffer))))
-      (define usable (- (width) (string-length (repl-prompt))))
-      (define len (string-length str))
-      (if (> len usable)
-        (begin
-          (define front (string-chop (car buffer) (- usable)))
-          (write-highlighted
-            (string-append front (string-chop (cdr buffer) 1 usable)))
-          (call/native '(term setCursorPos)
-                       (min (+ 1
-                              (string-length (repl-prompt))
-                              (string-length front))
-                            (width))
-                       y))
-        (begin
-          (write-highlighted str)
-          (if shadow
-            (begin
-              (call/native '(term setTextColour) (shadow-colour))
-              (call/native '(term write) shadow)
-              (call/native '(term setTextColour) (text-colour))))
-          (call/native '(term setCursorPos)
-                        (+ 1
-                           (string-length (repl-prompt))
-                           (string-length (car buffer)))
-                        y))))
+    (when needs-repaint
+      (call/native '(term clearLine))
+      (call/native '(term setCursorPos) 1 y)
+      (write-highlighted (repl-prompt))
+      (when (not (null? repaint-tasks))
+        (map (lambda (p) (p)) repaint-tasks)
+        (set! repaint-tasks '())
+        (loop ev))
+      (let ((str (string-append (car buffer) (cdr buffer))))
+        (if (out-of-bounds)
+          (begin
+            (define usable (- (width) (string-length (repl-prompt)) 1))
+            (set! needs-repaint #t)
+            (define front (string-chop (car buffer) (- usable)))
+            (write-highlighted
+              (string-append front (cdr buffer)))
+            (call/native '(term setCursorPos)
+                         (min (+ 1
+                                (string-length (repl-prompt))
+                                (string-length front))
+                              (width))
+                         y))
+          (begin
+            (set! needs-repaint #f)
+            (write-highlighted str)
+            (when shadow (draw-editor-shadow))
+            (call/native '(term setCursorPos)
+                          (+ 1
+                             (string-length (repl-prompt))
+                             (string-length (car buffer)))
+                          y)))))
     (case ev
+      [(("char" ch) #:when (hash-ref repl-key-bindings ch))
+       (set! needs-repaint #t)
+       (set! buffer ((hash-ref repl-key-bindings key) buffer))
+       (refresh-editor-shadow buffer)
+       (loop (get-event-data))]
       [("char" ch)
+       (when (or (hash-ref delimiters ch)
+                 (out-of-bounds)
+                 (not (= (cdr buffer) ""))
+                 shadow)
+         (set! needs-repaint #t))
        (set! buffer (gap-buffer-insert buffer ch))
+       (unless needs-repaint
+         (call/native '(term write) ch))
        (refresh-editor-shadow buffer)
        (loop (get-event-data))]
       [("key_up" key)
@@ -176,12 +219,14 @@
        (cond
          ((= key (hash-ref keys "enter"))
           (call/native '(table insert) repl-history buffer)
-          (set! shadow #f) ; Dismiss the shadow
-          (loop 'exit)) ; and draw one last time so it actually goes away
+          (set! shadow #f)        ; Dismiss the shadow
+          (set! needs-repaint #t) ; Repaint the editor
+          (loop 'exit))           ; and draw one last time so it actually goes away
          ((modifier? key)
           (hash-set! held (modifier? key) #t)
           (loop (get-event-data)))
          ((hash-ref repl-key-bindings key)
+          (set! needs-repaint #t)
           (set! buffer ((hash-ref repl-key-bindings key) buffer))
           (loop (get-event-data)))
          (else (loop (get-event-data))))]
@@ -189,9 +234,11 @@
       [else (loop (get-event-data))])))
 
 (bind 'backspace (lambda (buffer)
-                   (let ((buf (gap-buffer-delete-backwards buffer 1)))
+                   (let ((buf (if (held? 'control)
+                                (gap-buffer-kill-backwards buffer 1)
+                                (gap-buffer-delete-backwards buffer 1))))
                      (refresh-editor-shadow buf)
-                     (gap-buffer-delete-backwards buffer 1))))
+                     buf)))
 (bind 'delete (lambda (buffer) (gap-buffer-delete buffer 1)))
 (bind 'home gap-buffer-home)
 (bind 'end gap-buffer-end)
@@ -205,8 +252,13 @@
               (set! shadow #f)
               (gap-buffer-left buffer 1)))
 (bind 'right (lambda (buffer)
-               (set! shadow #f)
-               (gap-buffer-right buffer 1)))
+               (case shadow
+                 [(x . y)
+                  (set! shadow #f)
+                  (gap-buffer-insert buffer x)] ; accept completion
+                 [else
+                   (set! shadow #f)
+                   (gap-buffer-right buffer 1)])))
 
 (bind 'up (lambda (buffer)
             (set! shadow #f)
@@ -222,6 +274,21 @@
                  (set! history-pos #f))
                 (history-pos (set! history-pos (+ history-pos 1))))
               (hash-ref repl-history history-pos (cons "" ""))))
+
+(bind 'w (lambda (buffer)
+           (if (held? 'control)
+             (let ((buf (gap-buffer-kill-backwards buffer)))
+               (refresh-editor-shadow buf)
+               buf)
+             buffer)))
+
+; cycle through shadows
+(bind 'tab (lambda (buffer)
+             (case shadow
+               [() (refresh-editor-shadow buffer)]
+               [(a . b)
+                (set! shadow (b))])
+             buffer))
 
 (define-syntax (stream-cons a b)
   `(cons ,a (lambda () ,b)))
@@ -287,13 +354,52 @@
                        read))
             #\newline))
       (lambda (e)
-        (write "Scheme error: ")
-        (write e)
+        (write "Error:")
+        (if (string? e)
+          (case (string-find e ": ")
+            [(start . end)
+             (write (string-chop e (+ 1 start)))]
+            [else (write e)])
+          (write e))
         (write #\newline)))
     (scheme-interaction (+ 2 line))))
+
+(define (explain proc)
+  (define (first-token line)
+    (or (make-token line literal-colour       "^[%s]+,%w+")
+        (make-token line literal-colour       "^[%s]+'%w+")
+        (make-token line (lambda () 'spaces)  "^%s+")
+        (make-token line text-colour          "^[%w']+")
+        (make-token line text-colour          "^[^%w_]+")))
+  (case (documentation-for-procedure proc)
+    [#f #f]
+    [s
+      (write "Procedure arguments: " #\newline)
+      (write "  " (hash-ref proc "args") "\n\n")
+      (write "Documentation:\n  ")
+      (let loop ((token (first-token s)) (written 2) (lines 0))
+        (case token
+          [#f
+           (write #\newline)
+           (+ 4 lines)]
+          [((r t size c) #:when (>= (+ size written) (width)))
+           (write #\newline "  ")
+           (loop (list r t size c) 2 (+ 1 lines))]
+          [(rest t s 'spaces)
+           (write " ")
+           (loop (first-token rest) (+ written 1) lines)]
+          [(rest text size colour)
+           (call/native '(term setTextColour) colour)
+           (call/native '(term write) text)
+           (call/native '(term setTextColour) (text-colour))
+           (loop (first-token rest) (+ written size) lines)]))]))
 
 (call/native '(term clear))
 (call/native '(term setCursorPos) 1 1)
 (write ";; Scheme interaction\n")
+(write (repl-prompt))
+; the line editor waits for an event to paint the first time.
+; if we write the prompt here, it'll be painted over on the first event.
+; no harm done
 
 (scheme-interaction 1)

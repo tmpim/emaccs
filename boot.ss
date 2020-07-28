@@ -1,4 +1,5 @@
 (define (not b)
+  "Negate the boolean ,b."
   (if b #f #t))
 
 (define = eq?)
@@ -11,32 +12,40 @@
 
 (define list (lambda x x))
 
-(define (make-hash-table) ((call/native 'load "return {}")))
-(define (hash-set! table key value) (call/native 'rawset table key value))
+(define (make-hash-table)
+  "Create a new hash table. This procedure is internal: Shouldn't this
+  have arguments?"
+  ((call/native 'load "return {}")))
+(define (hash-set! table key value)
+  "Associate the ,key in ,table with the given ,value."
+  (call/native 'rawset table key value))
 (define (copy-hash-table table)
+  "Copy the hash table ,table. Since hash tables are mutable, this is
+  important if you want to maintain persistence."
   (define x (make-hash-table))
   (hash-for-each table (lambda (k v)
                          (hash-set! x k v)))
   x)
 
 (define macros (make-hash-table))
-(define symbol-macros (make-hash-table))
 
 (define (push-macro! name expander)
+  "Associate the macro ,name with the expansion function ,expander.
+   Prefer 'define-syntax instead."
   (hash-set! macros (car name) expander)
   #t)
 
-(define (push-symbol-macro! name expander)
-  (hash-set! symbol-macros (car name) expander)
-  #t)
-
 (define (lookup-macro-in symbol table)
+  "Look up the macro called ,symbol in the table ,table."
   (hash-ref table (car symbol)))
 
 (define (make-lambda args body)
+  "Make a 'lambda expression with the given ,args and ,body."
   (cons 'lambda (cons args body)))
 
 (define (map f x)
+  "Map the procedure ,f over the list ,x, collecting the results in a
+   new list that doesn't share any structure with ,x."
   (if (null? x)
       '()
       (cons (f (car x))
@@ -51,6 +60,8 @@
      (cdr macro-arguments))))
 
 (define (member x xs)
+  "Test whether ,x is a member of ,xs, using '= as an equality
+  predicate."
   (if (null? xs)
       #f
       (if (= (car xs) x)
@@ -58,6 +69,8 @@
           (member x (cdr xs)))))
 
 (define (append xs ys)
+  "Append the list ,xs with the list ,ys, such that the result shares
+  structure with ,ys."
   (if (if (null? xs)
         #t
         (not (pair? xs)))
@@ -65,6 +78,8 @@
       (cons (car xs) (append (cdr xs) ys))))
 
 (define (expand/helper shadow s)
+  "Expand the expression ,s, without considering the symbols in ,shadow
+  as possibly macros."
   (if (if (pair? s)
         (if (symbol? (car s))
           (not (member (car s) shadow))
@@ -95,20 +110,14 @@
    (if (pair? s)
      (cons (expand/helper shadow (car s))
            (expand/helper shadow (cdr s)))
-     (if (if (symbol? s)
-           (not (member s shadow))
-           #f)
-       ((lambda (m-entry)
-          (if m-entry
-            (m-entry)
-            s))
-        (lookup-macro-in s symbol-macros))
-       s))))
+     s)))
 
 (define (expand s)
+  "Macro-expand the expression ,s"
   (expand/helper '() s))
 
 (define (and-expander macro-arguments)
+  "Macro expander for 'and expressions."
   (if (null? macro-arguments)
     #t
     (if (null? (cdr macro-arguments))
@@ -120,6 +129,7 @@
         #f))))
 
 (define (or-expander macro-arguments)
+  "Macro expander for 'or expressions."
   ((lambda (name)
      (if (null? macro-arguments)
        #f
@@ -135,6 +145,7 @@
 (push-macro! 'or or-expander)
 
 (define (quasiquote/helper do-quote expr)
+  "Macro expander for quasiquote expressions."
   (if (and (pair? expr)
            (= 'unquote (car expr)))
     (cadr expr)
@@ -190,6 +201,12 @@
   (expand cases))
 
 (define (make-parameter . initval)
+  "Make a parameter, or dynamic binding, with the initial value given by
+  ,initval.
+  A parameter is a binding that, while lexically bound (as everything in
+  Scheme), has its value controlled dynamically. To change a parameter,
+  call it a single argument: this will be the new value.
+  If no parameters are given in the call, the stored value is returned."
   (let ((cell (or (car initval) #f)))
     (lambda args
       (if (null? args)
@@ -219,10 +236,13 @@
           (hash-set! table (caar args) (cdar args))
           (go table (cdr args)))))
     (lambda args
+      "Make a hash table with the associations given as pairs in ,args."
       (define table (empty-hash))
       (go table args))))
 
 (define (length l . a)
+  "Compute the length of the list ,l. Optionally, use ('car ,a) as the
+  length of the empty list. (Leave ,a empty for 0)."
   (cond
     ((null? a) (length l 0))
     ((null? l) (car a))
@@ -238,6 +258,22 @@
        (error
          "In function " ',func ": the argument " ',val
          "was expected to be a " ',pred?))))
+
+(define-syntax (when c . b)
+  `(if ,c (begin . ,b) #f))
+
+(define-syntax (unless c . b)
+  `(if ,c #f (begin . ,b)))
+
+(define (documentation-for-procedure f)
+  "Return the documentation for ,f, if any exists.
+   Documentation exists for procedures defined with a string as the
+   first element of their bodies, given that the string is not the only
+   expression."
+  (cond
+    ((procedure? f)
+     (catch (lambda () (hash-ref f "doc"))
+            (lambda (e) #f)))))
 
 (if (= platform 'computercraft)
   (if (call/native '(fs exists) "scheme51.lua")

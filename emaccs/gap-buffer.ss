@@ -37,3 +37,9 @@
 
 (define (gap-buffer-end buf)
   (cons (string-append (car buf) (cdr buf)) ""))
+
+(define (gap-buffer-kill-backwards buf)
+  (case (string-find (car buf) "%w+%s*$")
+    [(start . end)
+     (cons (string-slice (car buf) 0 (- start 1)) (cdr buf))]
+    [false buf]))

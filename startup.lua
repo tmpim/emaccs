@@ -358,6 +358,8 @@ local function scm_print(e)
     elseif e.kw then
       write '#:'
       write(e[1])
+    elseif getmetatable(e) and getmetatable(e).__call then
+      write(tostring(getmetatable(e).__call))
     else
       write '(make-hash-table '
       for k, v in pairs(e) do

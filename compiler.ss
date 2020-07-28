@@ -169,9 +169,6 @@
               (if (null? (cdr alist)) "" ", ")
               (compile-args (cdr alist))))))
 
-(define (builtin-function? s)
-  (or (= s 'cons) (= s 'car) (= s 'cdr)))
-
 (define-syntax (warn-extra-arguments rest expr)
   (define temp (gensym))
   `(if (not (null? ,rest))
@@ -179,6 +176,10 @@
        (warn "Potentially too many arguments for function" (car ,name) ,name))))
 
 (define compilation-rules (make-hash-table))
+
+(define (builtin-function? s)
+  (or (= s 'cons) (= s 'car) (= s 'cdr)))
+
 
 (define-syntax (define-compilation-rule name . body)
   `(hash-set! compilation-rules ,(caar name)
@@ -212,6 +213,14 @@
   (case expr
     [(e #:when (not (pair? e))) (compile-simple-expression return e)]
     [('quote e) (compile-quote return e)]
+    [(('lambda args doc body1 . body) #:when (string? doc))
+     ; Lambda with documentation
+     (let ((ret return))
+       (compile-lambda (lambda (x)
+                         (ret (format "setmetatable({args=%s,doc=%q}, { __call = function%s })"
+                                      (compile-expr (lambda (x) x) `',args) doc x)))
+                       (cons (gensym) args)
+                       (cons body1 body)))]
     [('lambda args . body)
      (let ((ret return))
        (compile-lambda (lambda (x) (ret (format "(function%s)" x))) args body))]
@@ -290,14 +299,14 @@
   (let ((x (read)))
     (if (eq? x #eof)
       i
-      (catch (lambda ()
-               ((if p write (lambda (x) #f))
-                (compile-and-run x)
-                #\newline)
-               (repl p (+ 1 i)))
-            (lambda (e)
-              (write "Error in user code: " e #\newline)
-              (repl p i))))))
+      (begin
+        (catch (lambda ()
+                 ((if p write (lambda (x) #f))
+                  (compile-and-run x)
+                  #\newline))
+             (lambda (e)
+               (write "Error in user code: " e #\newline)))
+        (repl p (+ 1 i))))))
 
 (define *loaded-modules* '())
 
@@ -368,7 +377,8 @@
   "return type(_p) == 'number' or (type(_p) == 'table' and _p[0] == rational)")
 (define/native (string? p) "return type(_p) == 'string'")
 (define/native (keyword? p) "return _symbolS63(_p) and _p.kw ~= nil")
-(define/native (procedure? p) "return type(_p) == 'function'")
+(define/native (procedure? p)
+  "return type(_p) == 'function' or (type(_p) == 'table' and getmetatable(_p) and type(getmetatable(_p).__call) == 'function')")
 (define/native (char? p) "return type(_p) == 'string' and #_p == 1")
 (define/native (cons a b) "return {_a,_b}")
 (define/native (hash-ref t k def)
