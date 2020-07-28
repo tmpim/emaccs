@@ -1,6 +1,7 @@
 (define (case-pair? p) (pair? p))
+(define *case-void (make-hash-table))
 
-(define-syntax (case expr head . cases)
+(define-syntax (*case empty expr head . cases)
   (define match-sym (gensym))
   (define (compile-match pattern match-sym body rest)
     (cond
@@ -45,7 +46,7 @@
             (,join))))))
   (define (expand cases)
     (if (null? cases)
-      #f
+      empty
       (compile-match
         (caar cases)
         match-sym
@@ -55,9 +56,16 @@
   `(let ((,match-sym ,expr))
      ,(expand (cons head cases))))
 
-(define-syntax (case-lambda . cases)
+(define-syntax (case expr case1 . cases)
+  `(*case #f ,expr ,case1 . ,cases))
+
+(define-syntax (case! expr case1 . cases)
+  `(*case (error "no matching case for " ,expr) ,expr ,case1 . ,cases))
+
+(define-syntax (case-lambda case1 . cases)
   (define name (gensym))
-  `(lambda ,name (case ,name ,@cases (else (error "no matching case to call")))))
+  `(lambda ,name
+     (case! ,name ,case1 . ,cases)))
 
 (define-syntax let-values
   (case-lambda

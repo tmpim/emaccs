@@ -1,6 +1,6 @@
 (if (and (not (eq? platform "Boot Scheme"))
          (not (eq? platform "Scheme 51")))
-  (load "case.ss"))
+  (load "boot/case.ss"))
 
 (define (expand-for-compilation expr)
   (expand '(let) expr))
@@ -139,6 +139,7 @@
 
 (define (compile-body return b)
   (cond
+    ((not (pair? b)) (compile-expr return b))
     ((null? b) (return "false"))
     ((and (pair? b) (null? (cdr b))) (compile-expr return (car b) #t))
     ((atomic? (car b)) (compile-body return (cdr b)))

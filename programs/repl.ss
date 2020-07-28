@@ -1,7 +1,10 @@
 (use-modules (scm-51 string)
              (scm-51 input)
              (scm-51 control)
+
              (emaccs gap-buffer)
+             (emaccs terminal)
+
              (srfi srfi-17))
 
 (define (get-event-data)
@@ -27,35 +30,11 @@
 (define (bind key action)
   (hash-set! repl-key-bindings (hash-ref keys (car key)) action))
 
-(define (width) (call-with-values
-                  (lambda () (call/native '(term getSize)))
-                  (lambda (x y) x)))
-
-(define (height) (call-with-values (lambda () (call/native '(term getSize)))
-                                   (lambda (x y) y))) 
-
 (define/native (over x y) "return _x / _y")
 (define/native (modulo x y) "return _x % _y")
 
 (define identifier-pattern "[a-zA-Z%+%-%?%!%=%>%<%*%/%%]+")
 
-(define max
-  (case-lambda
-    ((x) x)
-    ((x y) (if (> x y) x y))
-    ((x y . z)
-     (if (> x y)
-       (apply max (cons x z))
-       (apply max (cons y z))))))
-
-(define min
-  (case-lambda
-    ((x) x)
-    ((x y) (if (> x y) y x))
-    ((x y . z)
-     (if (> x y)
-       (apply min (cons y z))
-       (apply min (cons x z))))))
 
 (define repl-history (make-hash-table))
 
@@ -83,9 +62,9 @@
 (define (write-token line colour pattern)
   (case (string-find line pattern)
     [(start . end)
-     (call/native '(term setTextColour) (colour))
-     (call/native '(term write) (string-slice line start end))
-     (call/native '(term setTextColour) (text-colour))
+     (term-set-text-colour (colour))
+     (term-write (string-slice line start end))
+     (term-set-text-colour (text-colour))
      (list (string-chop line (+ 1 end)) end)]
     [else #f]))
 
@@ -98,7 +77,7 @@
 (define (write-ident-token line)
   (case (string-find line (string-append "^" identifier-pattern))
     [(start . end)
-     (call/native '(term setTextColour)
+     (term-set-text-colour
        ((case (string-slice line start end)
           ["lambda" macro-colour]
           ["if" macro-colour]
@@ -107,8 +86,8 @@
           ["define" macro-colour]
           [(x #:when (hash-ref macros x)) macro-colour]
           [else identifier-colour])))
-     (call/native '(term write) (string-slice line start end))
-     (call/native '(term setTextColour) (text-colour))
+     (term-write (string-slice line start end))
+     (term-set-text-colour (text-colour))
      (list (string-chop line (+ 1 end)) end)]
     [else #f]))
 
@@ -136,19 +115,19 @@
 (define repaint-tasks '())
 
 (define (draw-editor-shadow)
-  (call/native '(term setTextColour) (shadow-colour))
+  (term-set-text-colour (shadow-colour))
   (cond
     ((pair? shadow)
-     (call/native '(term write) (car shadow)))
+     (term-write (car shadow)))
     ((string? shadow)
-     (call/native '(term write) (car shadow)))
+     (term-write (car shadow)))
     ((null? shadow) #f)
     (else (write shadow)))
-  (call/native '(term setTextColour) (text-colour)))
+  (term-set-text-colour (text-colour)))
 
 (define (interact-line)
   (define buffer (make-gap-buffer "" 1))
-  (define y (call-with-values (lambda () (call/native '(term getCursorPos)))
+  (define y (call-with-values (lambda () (term-get-cursor-pos))
                               (lambda (x y) y)))
   (define needs-repaint #t)
   (define (out-of-bounds)
@@ -164,8 +143,8 @@
   (let loop ((ev (get-event-data)))
     ; clear the line and write the prompt
     (when needs-repaint
-      (call/native '(term clearLine))
-      (call/native '(term setCursorPos) 1 y)
+      (term-clear-line)
+      (term-set-cursor-pos 1 y)
       (write-highlighted (repl-prompt))
       (when (not (null? repaint-tasks))
         (map (lambda (p) (p)) repaint-tasks)
@@ -179,21 +158,21 @@
             (define front (string-chop (car buffer) (- usable)))
             (write-highlighted
               (string-append front (cdr buffer)))
-            (call/native '(term setCursorPos)
-                         (min (+ 1
-                                (string-length (repl-prompt))
-                                (string-length front))
-                              (width))
-                         y))
+            (term-set-cursor-pos
+               (min (+ 1
+                      (string-length (repl-prompt))
+                      (string-length front))
+                    (width))
+               y))
           (begin
             (set! needs-repaint #f)
             (write-highlighted str)
             (when shadow (draw-editor-shadow))
-            (call/native '(term setCursorPos)
-                          (+ 1
-                             (string-length (repl-prompt))
-                             (string-length (car buffer)))
-                          y)))))
+            (term-set-cursor-pos
+                (+ 1
+                   (string-length (repl-prompt))
+                   (string-length (car buffer)))
+                y)))))
     (case ev
       [(("char" ch) #:when (hash-ref repl-key-bindings ch))
        (set! needs-repaint #t)
@@ -208,7 +187,7 @@
          (set! needs-repaint #t))
        (set! buffer (gap-buffer-insert buffer ch))
        (unless needs-repaint
-         (call/native '(term write) ch))
+         (term-write ch))
        (refresh-editor-shadow buffer)
        (loop (get-event-data))]
       [("key_up" key)
@@ -389,13 +368,13 @@
            (write " ")
            (loop (first-token rest) (+ written 1) lines)]
           [(rest text size colour)
-           (call/native '(term setTextColour) colour)
-           (call/native '(term write) text)
-           (call/native '(term setTextColour) (text-colour))
+           (term-set-text-colour colour)
+           (term-write text)
+           (term-set-text-colour (text-colour))
            (loop (first-token rest) (+ written size) lines)]))]))
 
-(call/native '(term clear))
-(call/native '(term setCursorPos) 1 1)
+(term-clear)
+(term-set-cursor-pos 1 1)
 (write ";; Scheme interaction\n")
 (write (repl-prompt))
 ; the line editor waits for an event to paint the first time.

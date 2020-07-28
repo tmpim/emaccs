@@ -470,7 +470,6 @@ function eval(expr, env, okk, errk)
   elseif consp(expr) then
     return eval(expr[1], env, function(f)
       return apply_dispatch(f, expr[2], env, okk, function(e)
-        scm_print(expr); print()
         return errk(e)
       end)
     end, errk)
@@ -746,8 +745,6 @@ local scm_env = {
   expand = function(x) return x end,
   ['eq?'] = scm_eq,
   cons = cons,
-  car = function(p) return p[1] end,
-  cdr = function(p) return p[2] end,
   ['pair?'] = consp,
   ['symbol?'] = symbolp,
   ['keyword?'] = function(s)
@@ -934,6 +931,20 @@ defproc('with-input-from-file', function(ok, err, env, p, f)
   end
 end)
 
+defproc('car', function(ok, err, env, p)
+  if type(p) == 'table' then
+    return ok(p[1])
+  end
+  return throw(err, "car: can't take car of ", p)
+end)
+
+defproc('cdr', function(ok, err, env, p)
+  if type(p) == 'table' then
+    return ok(p[2])
+  end
+  return throw(err, "car: can't take car of ", p)
+end)
+
 local function hash_for_each(ok, err, env, hash, func, k1, n)
   local k, v = next(hash, k1)
   local n = n or 0
@@ -1077,4 +1088,4 @@ return scm_load(repl, function(x)
       write(' ')
     end
   end
-end, {scm_env,scm_nil}, "boot.ss")
+end, {scm_env,scm_nil}, "boot/boot.ss")

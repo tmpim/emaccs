@@ -3,14 +3,17 @@
 code () {
 cat <<EOF
 (define booting #t)
-(load "modules.ss")
-(load "compiler.ss")
+(load "boot/case.ss")
+(load "boot/modules.ss")
+(load "boot/r5rs.ss")
+(load "boot/compiler.ss")
 (begin
   (write "local function ignore(x) end" #\\newline)
-  (compile-file "boot.ss")
-  (compile-file "case.ss")
-  (compile-file "compiler.ss")
-  (compile-file "modules.ss"))
+  (compile-file "boot/boot.ss")
+  (compile-file "boot/case.ss")
+  (compile-file "boot/r5rs.ss")
+  (compile-file "boot/compiler.ss")
+  (compile-file "boot/modules.ss"))
 EOF
 if [ ! -z "$SCM_EXTRA" ]; then
   echo "$SCM_EXTRA"
@@ -21,7 +24,7 @@ scm51=$(mktemp)
 booted=$(mktemp)
 
 code \
- | lua $1 \
+ | luajit $1 \
  | sed -re 's/^(> )?true$//g' \
  | sed -re 's/^(> )?([0-9]+)$//g' \
  | sed -re 's/^>//g' \
