@@ -62,10 +62,17 @@
 (define-syntax (case! expr case1 . cases)
   `(*case (error "no matching case for " ,expr) ,expr ,case1 . ,cases))
 
-(define-syntax (case-lambda case1 . cases)
-  (define name (gensym))
-  `(lambda ,name
-     (case! ,name ,case1 . ,cases)))
+(define-syntax case-lambda
+  (lambda args
+    (define name (gensym))
+    (case args
+      [((docs case1 . cases) #:when (string? docs))
+       `(lambda ,name
+          ,docs
+          (case! ,name ,case1 . ,cases))]
+      [(case1 . cases)
+       `(lambda ,name
+          (case! ,name ,case1 . ,cases))])))
 
 (define-syntax let-values
   (case-lambda
@@ -88,3 +95,30 @@
          . ,body)
        ,init1 . ,(map cadr vars))]
     [(() . body) `(begin . ,body)]))
+
+(define-syntax (letrec vars . body)
+  `((lambda (,(map car vars))
+      (begin . ,(map (lambda (x) `(set! ,(car x) ,(cdr x))) vars))
+      . ,body)
+    . ,(map (lambda a #f) vars))) 
+
+(define-syntax let-syntax
+  (begin
+    (define go
+      (case-lambda
+        [(((var macro) . vars) . body)
+         (define saved (lookup-macro-in var macros))
+         (push-macro! var (eval macro))
+         (let ((b (apply go (cons vars body))))
+           (push-macro! var saved)
+           b)]
+        [(() . body)
+         `(begin . ,(expand body))]))))
+
+(define-syntax letrec
+  (case-lambda
+    ((() . body) `(begin . ,body))
+    ((((var1 exp1) . vars) . body)
+     `((lambda (,var)
+         (letrec ,vars . ,body))
+       ,exp1))))

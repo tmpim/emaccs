@@ -11,34 +11,31 @@
   (call-with-values (lambda () (call/native '(os pullEvent)))
                     list))
 
-(define keys (hash-ref (environment) "keys"))
-(define colours (hash-ref (environment) "colours"))
-
-(define repl-prompt (make-parameter "> "))
+(define repl-prompt             (make-parameter "> "))
 (define repl-highlighting-limit (make-parameter 50))
 
-(define string-colour     (make-parameter (hash-ref colours "green")))
-(define identifier-colour (make-parameter (hash-ref colours "white")))
-(define macro-colour      (make-parameter (hash-ref colours "magenta")))
-(define text-colour       (make-parameter (hash-ref colours "white")))
-(define shadow-colour     (make-parameter (hash-ref colours "grey")))
-(define comment-colour    (make-parameter (hash-ref colours "lightGrey")))
-(define literal-colour    (make-parameter (hash-ref colours "yellow")))
+(define string-colour        (make-parameter (hash-ref colours "green")))
+(define prompt-colour        (make-parameter (hash-ref colours "white")))
+(define identifier-colour    (make-parameter (hash-ref colours "white")))
+(define macro-colour         (make-parameter (hash-ref colours "magenta")))
+(define text-colour          (make-parameter (hash-ref colours "white")))
+(define shadow-colour        (make-parameter (hash-ref colours "grey")))
+(define comment-colour       (make-parameter (hash-ref colours "lightGrey")))
+(define literal-colour       (make-parameter (hash-ref colours "yellow")))
+(define defined-ident-colour (make-parameter (hash-ref colours "lightBlue")))
 
 (define repl-key-bindings (make-hash-table))
 
 (define (bind key action)
   (hash-set! repl-key-bindings (hash-ref keys (car key)) action))
 
-(define/native (over x y) "return _x / _y")
-(define/native (modulo x y) "return _x % _y")
-
-(define identifier-pattern "[a-zA-Z%+%-%?%!%=%>%<%*%/%%]+")
-
+(define identifier-pattern
+  "[a-zA-Z%+%-%?%!%=%>%<%*%/%%][a-zA-Z0-9%+%-%?%!%=%>%<%*%/%%]*")
 
 (define repl-history (make-hash-table))
 
 (define held (make-hash-table '("shift" . #f) '("meta" . #f) '("control" . #f)))
+
 (define (modifier? k)
   (hash-ref (make-hash-table
               (cons (hash-ref keys "leftShift") "shift")
@@ -48,16 +45,76 @@
               (cons (hash-ref keys "leftAlt") "meta")
               (cons (hash-ref keys "rightAlt") "meta"))
             k))
+
 (define (held? s)
   (hash-ref held (car s)))
 
 (define shadow #f)
 
+(define-syntax (stream-cons a b)
+  `(cons ,a (lambda () ,b)))
+
+(define stream-car car)
+(define (stream-cdr c)
+  (cond
+    ((null? c) '())
+    ((procedure? (cdr c))
+     ((cdr c)))
+    (else (cdr c))))
+
+(define (stream-yield x)
+  (shift1 k (stream-cons x (k #f))))
+
+(define stream-append
+  (begin
+    (define (append2 xs ys)
+      (cond
+        ((null? xs) ys)
+        ((pair? xs) (stream-cons (car xs) (append (stream-cdr xs) ys)))))
+    (case-lambda
+      (() '())
+      ((as) as)
+      ((as bs . cs) (append2 as (apply stream-append (cons bs cs)))))))
+
+(define (complete-identifier point)
+  (case (string-match (car point) (string-append identifier-pattern "$"))
+    [#f #f]
+    (ident
+      (define already-typed (string-length ident))
+      (reset
+        ; Search macros
+        (hash-for-each
+          macros
+          (lambda (name value)
+            (if (= (string-slice name 1 (string-length ident)) ident)
+              (stream-yield
+                (string-chop name (+ 1 already-typed))))))
+        (set! ident (escape-symbol (call/native 'symbol ident)))
+        ; Search bindings
+        (hash-for-each
+          (environment)
+          (lambda (name value)
+            (if (= (string-slice name 1 (string-length ident)) ident)
+              (stream-yield
+                (string-chop (unescape-symbol name)
+                             (+ 1 already-typed))))))
+        '()))))
+
+(define (complete-filename point)
+  (case (string-match (car point) "/[%w/]+$")
+    [#f '()]
+    [path
+      (define names (call/native '(fs find) (string-append path "*")))
+      (reset (hash-for-each names
+               (lambda (num name)
+                 (if (call/native '(fs isDir) name)
+                   (stream-yield (string-append (string-chop name (string-length path)) "/"))
+                   (stream-yield (string-chop name (string-length path)))))))]))
+
 (define (refresh-editor-shadow point)
-  (case (complete-identifier point)
-    [(complete . rest)
-     (set! shadow (cons complete rest))]
-    [t (set! shadow #f)]))
+  (when (= (cdr point) "")
+    (set! shadow (stream-append (complete-filename point)
+                                (complete-identifier point)))))
 
 (define (write-token line colour pattern)
   (case (string-find line pattern)
@@ -77,15 +134,21 @@
 (define (write-ident-token line)
   (case (string-find line (string-append "^" identifier-pattern))
     [(start . end)
-     (term-set-text-colour
-       ((case (string-slice line start end)
-          ["lambda" macro-colour]
-          ["if" macro-colour]
-          ["quote" macro-colour]
-          ["set!" macro-colour]
-          ["define" macro-colour]
-          [(x #:when (hash-ref macros x)) macro-colour]
-          [else identifier-colour])))
+     (define s (string-slice line start end))
+     (if (string->number s)
+       (term-set-text-colour (literal-colour))
+       (term-set-text-colour
+         ((case (string-slice line start end)
+            ["lambda" macro-colour]
+            ["if" macro-colour]
+            ["quote" macro-colour]
+            ["set!" macro-colour]
+            ["define" macro-colour]
+            [(x #:when (hash-ref macros x)) macro-colour]
+            [(x #:when (hash-ref (environment) (escape-symbol
+                                                 (string->symbol x))))
+             defined-ident-colour]
+            [else identifier-colour]))))
      (term-write (string-slice line start end))
      (term-set-text-colour (text-colour))
      (list (string-chop line (+ 1 end)) end)]
@@ -98,7 +161,7 @@
       (apply loop (or (write-token line comment-colour    "^;.*")
                       (write-token line string-colour     "^\".-[^\\]\"")
                       (write-ident-token line)
-                      (write-token line literal-colour    "^[0-9]+")
+                      (write-token line literal-colour    "^-?[0-9/%.]+")
                       (write-token line literal-colour    "^#[tf]")
                       (write-token line string-colour     "^#\\%w+")
                       (write-token line text-colour       "^[^%w_]")
@@ -120,7 +183,7 @@
     ((pair? shadow)
      (term-write (car shadow)))
     ((string? shadow)
-     (term-write (car shadow)))
+     (term-write shadow))
     ((null? shadow) #f)
     (else (write shadow)))
   (term-set-text-colour (text-colour)))
@@ -145,7 +208,7 @@
     (when needs-repaint
       (term-clear-line)
       (term-set-cursor-pos 1 y)
-      (write-highlighted (repl-prompt))
+      (write-token (repl-prompt) prompt-colour ".*")
       (when (not (null? repaint-tasks))
         (map (lambda (p) (p)) repaint-tasks)
         (set! repaint-tasks '())
@@ -233,8 +296,9 @@
 (bind 'right (lambda (buffer)
                (case shadow
                  [(x . y)
-                  (set! shadow #f)
-                  (gap-buffer-insert buffer x)] ; accept completion
+                  (let ((buffer (gap-buffer-insert buffer x)))
+                    (refresh-editor-shadow buffer)
+                    buffer)] ; accept completion
                  [else
                    (set! shadow #f)
                    (gap-buffer-right buffer 1)])))
@@ -269,18 +333,6 @@
                 (set! shadow (b))])
              buffer))
 
-(define-syntax (stream-cons a b)
-  `(cons ,a (lambda () ,b)))
-
-(define stream-car car)
-(define (stream-cdr c)
-  (if (null? c)
-    '()
-    ((cdr c))))
-
-(define (stream-yield x)
-  (shift1 k (stream-cons x (k #f))))
-
 (define (deep-seq s)
   (if (null? s)
     s
@@ -293,36 +345,12 @@
     "S([0-9][0-9])"
     (lambda (c) (call/native '(string char) (call/native 'tonumber c)))))
 
-(define (complete-identifier point)
-  (let ((ident (string-match (car point) (string-append identifier-pattern "$"))))
-    (cond
-      ((not ident) '())
-      (else
-        (define already-typed (string-length ident))
-        (reset
-          ; Search macros
-          (hash-for-each
-            macros
-            (lambda (name value)
-              (if (= (string-slice name 1 (string-length ident)) ident)
-                (stream-yield
-                  (string-chop name (+ 1 already-typed))))))
-          (set! ident (escape-symbol (call/native 'symbol ident)))
-          ; Search bindings
-          (hash-for-each
-            (environment)
-            (lambda (name value)
-              (if (= (string-slice name 1 (string-length ident)) ident)
-                (stream-yield
-                  (string-chop (unescape-symbol name)
-                               (+ 1 already-typed))))))
-          '())))))
-
 (define (clamp i limit)
   (if (> i limit)
     (- limit 1) i))
 
 (define (scheme-interaction line)
+  "Run the fancy REPL."
   (set! shadow #f)
   (let ((input (interact-line)))
     (write #\newline)
@@ -344,9 +372,14 @@
     (scheme-interaction (+ 2 line))))
 
 (define (explain proc)
+  "Nicely format and write the documentation for ,proc. ,proc must be a
+  procedure object with associated documentation, i.e., of the form
+
+    (lambda args \"docs\" ...)"
   (define (first-token line)
     (or (make-token line literal-colour       "^[%s]+,%w+")
-        (make-token line literal-colour       "^[%s]+'%w+")
+        (make-token line defined-ident-colour "^[%s]+'%w+")
+        (make-token line literal-colour       "^[%s]+#%w+")
         (make-token line (lambda () 'spaces)  "^%s+")
         (make-token line text-colour          "^[%w']+")
         (make-token line text-colour          "^[^%w_]+")))
@@ -373,12 +406,13 @@
            (term-set-text-colour (text-colour))
            (loop (first-token rest) (+ written size) lines)]))]))
 
-(term-clear)
-(term-set-cursor-pos 1 1)
-(write ";; Scheme interaction\n")
-(write (repl-prompt))
-; the line editor waits for an event to paint the first time.
-; if we write the prompt here, it'll be painted over on the first event.
-; no harm done
+(when (= (module-name) 'main)
+  (term-clear)
+  (term-set-cursor-pos 1 1)
+  (write ";; Scheme interaction\n")
+  (write (repl-prompt))
+  ; the line editor waits for an event to paint the first time.
+  ; if we write the prompt here, it'll be painted over on the first event.
+  ; no harm done
 
-(scheme-interaction 1)
+  (scheme-interaction 1))

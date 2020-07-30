@@ -29,7 +29,7 @@ if not write then
   end
 end
 
-local function getchar()
+function getchar()
   if #input >= 1 then
     local c = table.remove(input, 1)
     return c
@@ -247,6 +247,8 @@ local function read_sexpr_list(delim, can_dot)
     end
     getchar()
     return e
+  elseif not ch then
+    return error("expected expression in list, but got #eof")
   else
     ungetchar(ch)
     return {read_sexpr(), read_sexpr_list(delim, true)}
@@ -298,7 +300,13 @@ function read_sexpr()
   elseif ch == '-' then
     local ch2 = peek()
     if ch2 <= '9' and ch2 >= '0' then
-      return -read_number(ch)
+      getchar()
+      local num = read_number(ch2)
+      if type(num) == 'table' then
+        return rational(-num[1], num[2])
+      else
+        return -num
+      end
     else
       return read_symbol(ch)
     end
@@ -330,7 +338,11 @@ local function scm_print(e)
     if symbolp(e) then
       write(e[1])
     elseif e[0] == eval then
-      write '#\'<closure>'
+      write '(lambda '
+      scm_print(e[1])
+      write ' '
+      scm_print(e[3])
+      write ')'
     elseif consp(e) then
       write '('
       repeat
@@ -655,7 +667,7 @@ local function minus_rat(x, y)
   end
   local x = num2rat(x)
   local y = num2rat(y)
-  return rational(x[1] * y[2] + y[1] * x[2], x[2] * y[2])
+  return rational(x[1] * y[2] - y[1] * x[2], x[2] * y[2])
 end
 
 local function times_rat(x, y)
@@ -1033,7 +1045,7 @@ scm_env.read  = read_sexpr
 
 local handles = {}
 
-function _G.redirect(p, t)
+function _G.input_from_file(p, t)
   if not p then
     error('not p', 2)
   end
@@ -1049,6 +1061,28 @@ function _G.redirect(p, t)
   local r = t()
   input_file = i
   return r
+end
+
+function _G.output_to_file(p, t)
+  if not p then
+    error('not p', 2)
+  end
+  if type(p) == 'string' then
+    local h = io.open(p, 'w')
+    if not h then
+      return error('failed to open ' .. p .. ' for write')
+    end
+    local old_write = write
+    function write(x)
+      h:write(x)
+    end
+    local r = t()
+    write = old_write
+    h:close()
+    return r
+  else
+    error("argument must be a path", 2)
+  end
 end
 -- return repl()
 
@@ -1074,6 +1108,10 @@ function _G.var(x, n)
     return x
   end
   return error("no binding for symbol " .. n, 2)
+end
+
+function ignore(x)
+  return true
 end
 
 --{{{

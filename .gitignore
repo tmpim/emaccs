@@ -1,1 +1,3 @@
 scheme51.lua
+compiler.lua
+*/*.lua

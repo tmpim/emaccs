@@ -106,18 +106,36 @@ function _pairS63(p)
   return type(p) == 'table' and #p == 2 and p[0] ~= rational
 end
 
+local function rat_lte(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x <= y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return x[1]*y[2] <= y[1]*x[2]
+end
+
 function _S62(...)
   local t = table.pack(...)
   if t.n < 2 then
     error("not enough arguments for operator (>)")
   else
     for i = 1, t.n do
-      if t[i + 1] and t[i] <= t[i + 1] then
+      if t[i + 1] and rat_lte(t[i], t[i + 1]) then
         return false
       end
     end
     return true
   end
+end
+
+local function rat_gte(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x >= y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return x[1]*y[2] >= y[1]*x[2]
 end
 
 function _S60(...)
@@ -126,12 +144,21 @@ function _S60(...)
     error("not enough arguments for operator (<)")
   else
     for i = 1, t.n do
-      if t[i + 1] and t[i] >= t[i + 1] then
+      if t[i + 1] and rat_gte(t[i], t[i + 1]) then
         return false
       end
     end
     return true
   end
+end
+
+local function rat_lt(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x < y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return x[1]*y[2] < y[1]*x[2]
 end
 
 function _S62S61(...)
@@ -140,7 +167,7 @@ function _S62S61(...)
     error("not enough arguments for operator (>=)")
   else
     for i = 1, t.n do
-      if t[i + 1] and t[i] < t[i + 1] then
+      if t[i + 1] and rat_lt(t[i], t[i + 1]) then
         return false
       end
     end
@@ -148,13 +175,23 @@ function _S62S61(...)
   end
 end
 
+local function rat_gt(x, y)
+  if type(x) == 'number' and type(y) == 'number' then
+    return x < y
+  end
+  local x = num2rat(x)
+  local y = num2rat(y)
+  return x[1]*y[2] > y[1]*x[2]
+end
+
+
 function _S60S61(...)
   local t = table.pack(...)
   if t.n < 2 then
     error("not enough arguments for operator (<=)")
   else
     for i = 1, t.n do
-      if t[i + 1] and t[i] > t[i + 1] then
+      if t[i + 1] and rat_gt(t[i], t[i + 1]) then
         return false
       end
     end

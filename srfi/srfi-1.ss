@@ -102,3 +102,15 @@
 
 (define (zip . ls)
   (apply map (cons list ls)))
+
+(define (all p xs)
+  (if (null? xs)
+    #t
+    (and (p (car xs))
+         (all p (cdr xs)))))
+
+(define cons*
+  (case-lambda
+    (() '())
+    ((x y) (cons x y))
+    ((x y . r) (cons x (apply cons* (cons y r))))))

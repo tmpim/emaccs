@@ -181,7 +181,6 @@
 (define (builtin-function? s)
   (or (= s 'cons) (= s 'car) (= s 'cdr)))
 
-
 (define-syntax (define-compilation-rule name . body)
   `(hash-set! compilation-rules ,(caar name)
               (cons ,(length (cdr name))
@@ -279,35 +278,40 @@
                (compile-expr (lambda (x) x) fun)
                (compile-args args)))]))
 
-(define (compile-and-load e)
+(define (compile-and-load e env)
   (define name
     (if (define? e)
         (if (pair? (cadr e))
             (car (car (cadr e)))
             (car (cadr e)))
         "[expr]"))
-  (call/native 'load (in-scope '() (compile e)) name "t" (environment)))
+  (call/native 'load (in-scope '() (compile e)) name "t" env))
 
-(define (compile-and-run e)
-  ((compile-and-load e)))
+(define (compile-and-run e env)
+  ((compile-and-load e env)))
 
-(define (repl p i)
-  (if p
-    (cond
-      ((eq? platform "Boot Scheme") (write "boot> "))
-      ((eq? platform "Scheme 51") (write "> "))
-      (else (write "load> "))))
-  (let ((x (read)))
-    (if (eq? x #eof)
-      i
-      (begin
-        (catch (lambda ()
-                 ((if p write (lambda (x) #f))
-                  (compile-and-run x)
-                  #\newline))
-             (lambda (e)
-               (write "Error in user code: " e #\newline)))
-        (repl p (+ 1 i))))))
+(define repl
+  (case-lambda
+    (() (repl #t 1 (environment)))
+    ((p) (repl p 1 (environment)))
+    ((p i) (repl p i (environment)))
+    ((p i env)
+     (if p
+       (cond
+         ((eq? platform "Boot Scheme") (write "boot> "))
+         ((eq? platform "Scheme 51") (write "> "))
+         (else (write "load> "))))
+     (let ((x (read)))
+       (if (eq? x #eof)
+         i
+         (begin
+           (catch (lambda ()
+                    ((if p write (lambda (x) #f))
+                     (compile-and-run x env)
+                     #\newline))
+                (lambda (e)
+                  (write "Error in user code: " e #\newline)))
+           (repl p (+ 1 i))))))))
 
 (define *loaded-modules* '())
 
@@ -322,10 +326,17 @@
           (loop)))))
   (with-input-from-file path loop))
 
-(define eval compile-and-run)
+(define eval
+  (case-lambda
+    [(e) (compile-and-run e (environment))]
+    [(e env) (compile-and-run e env)]))
 
-(define (load path)
-  (with-input-from-file path (lambda () (repl #f 0))))
+(define load
+  (case-lambda
+    [(path)
+     (with-input-from-file path (lambda () (repl #f 0)))]
+    [(path env)
+     (with-input-from-file path (lambda () (repl #f 0 env)))]))
 
 (define-syntax (run/native r)
   `(begin
@@ -406,7 +417,8 @@
   (run/native "_platform = 'Scheme 51'")
   (run/native "_platform = 'Boot Scheme'"))
 
-(define/native (with-input-from-file path thunk) "return redirect(_path, _thunk)")
+(define/native (with-input-from-file path thunk) "return input_from_file(_path, _thunk)")
+(define/native (with-output-to-file path thunk) "return output_to_file(_path, _thunk)")
 
 ; (if booting
 ;   (run/native

@@ -1,3 +1,9 @@
+(if (eq? platform 'computercraft)
+  (if (call/native '(fs exists) "scheme51.lua")
+    ((lambda ()
+       (write "loading pre-built Scheme..." #\newline)
+       (call/native 'dofile "scheme51.lua")))))
+
 (define (not b)
   "Negate the boolean ,b."
   (if b #f #t))
@@ -16,9 +22,11 @@
   "Create a new hash table. This procedure is internal: Shouldn't this
   have arguments?"
   ((call/native 'load "return {}")))
+
 (define (hash-set! table key value)
   "Associate the ,key in ,table with the given ,value."
   (call/native 'rawset table key value))
+
 (define (copy-hash-table table)
   "Copy the hash table ,table. Since hash tables are mutable, this is
   important if you want to maintain persistence."
@@ -275,6 +283,7 @@
      (catch (lambda () (hash-ref f "doc"))
             (lambda (e) #f)))))
 
-(if (= platform 'computercraft)
-  (if (call/native '(fs exists) "scheme51.lua")
-    (call/native 'dofile "scheme51.lua")))
+(define (call obj meth . args)
+  "Call the method ,meth on the object ,obj, giving the ,args as
+  variadic arguments."
+  (apply (hash-ref obj meth) args))

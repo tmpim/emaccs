@@ -9,7 +9,13 @@
     (lambda (x y) y))) 
 
 (define keys    (hash-ref (environment) "keys"))
-(define colours (hash-ref (environment) "red"))
+(define colours (hash-ref (environment) "colours"))
+
+(define-syntax define-colours
+  (case-lambda
+    (() #t)
+    ((c . cs)
+     `(define ,c (hash-ref (environment))))))
 
 (define (term-write x)
   (call/native '(term write) x))

@@ -15,8 +15,10 @@
     (cons "read" read)
     (cons "close" (lambda () #t))))
 
-(define (read-char port)
-  ((hash-ref port "read") port 1))
+(define read-char
+  (case-lambda
+    (() (call/native 'getchar))
+    ((port) ((hash-ref port "read") port 1))))
 
 (define (with-input-from-string x thunk)
   (with-input-from-file (input-from-string x) thunk))
