@@ -184,8 +184,38 @@
   (- x (* y (floor/ x y))))
 
 (define (floor/ x y)
-  "Flooring division. (floor/ ,x ,y) is the same thing as (floor (/ ,x ,y))."
-  (floor (/ x y)))
+  "Number-theoretic division (integer) division of ,x by ,y. This
+  procedure returns two integers, ,nq and ,nr, such that ,nq is the
+  floor of the result of the division and ,nr is the remainder."
+  (let ((nq (floor (/ x y))))
+    (values nq (- x (* y nq)))))
+
+(define (floor-quotient x y)
+  "Return the quotient of ,x by ,y in the sense of 'floor/."
+  (call-with-values (lambda () (floor/ x y))
+                    (lambda (nq nr) nq)))
+
+(define (floor-remainder x y)
+  "Return the remainder of ,x by ,y in the sense of 'floor/."
+  (call-with-values (lambda () (floor/ x y))
+                    (lambda (nq nr) nqr)))
+
+(define (truncate/ x y)
+  "Number-theoretic division (integer) division of ,x by ,y. This
+  procedure returns two integers, ,nq and ,nr, such that ,nq is the
+  truncation of the result of the division and ,nr is the remainder."
+  (let ((nq (truncate (/ x y))))
+    (values nq (- x (* y nq)))))
+
+(define (truncate-quotient x y)
+  "Return the quotient of ,x by ,y in the sense of 'truncate/."
+  (call-with-values (lambda () (truncate/ x y))
+                    (lambda (nq nr) nq)))
+
+(define (truncate-remainder x y)
+  "Return the remainder of ,x by ,y in the sense of 'truncate/."
+  (call-with-values (lambda () (truncate/ x y))
+                    (lambda (nq nr) nqr)))
 
 (define (inexact->exact q)
   "If ,q is an inexact number, return a rational approximation ,r of ,q
