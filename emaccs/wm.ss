@@ -51,27 +51,30 @@
                  (cons "__index" (environment))))
   env)
 
-(define (open-tab . args)
-  (define prog
-    (if (null? args)
-      "/programs/repl.ss"
-      (car args)))
-  (define env (make-environment))
-  (define thread
-    (coroutine-create (lambda () (load prog env))))
-  (define window
-    (call/native '(window create)
-                 native-terminal
-                 1 1
-                 (width) (- (native-height) 1) #t))
+(define open-tab
+  (case-lambda
+    (() (open-tab "/programs/repl.ss" "scheme"))
+    (((path) #:when (string? path))
+     (open-tab path path))
+    (((path title) #:when (string? path))
+     (open-tab (make-environment) path title))
+    (((env path title) #:when (string? path))
+     (open-tab (lambda () (load path env) (close-tab)) title))
+    (((proc title) #:when (procedure? proc))
+     (define thread (coroutine-create proc))
+     (define window
+       (call/native '(window create)
+                    native-terminal
+                    1 1
+                    (width) (- (native-height) 1) #t))
 
-  (call/native '(table insert)
-               active-tabs
-               (make-hash-table (cons "thread" thread)
-                                (cons "title" (or (and (null? args) "scheme")
-                                                  (car args)))
-                                (cons "window" window)))
-  (active-tab (tab-count)))
+     (call/native '(table insert)
+                  active-tabs
+                  (make-hash-table (cons "thread" thread)
+                                   (cons "title" title)
+                                   (cons "window" window)
+                                   (cons "filter" #f)))
+     (active-tab (tab-count)))))
 
 (define held 
   (make-hash-table '("shift" . #f) '("meta" . #f) '("control" . #f)))
@@ -86,19 +89,43 @@
               (cons (hash-ref keys "rightAlt") "meta"))
             k))
 
+(define edit
+  (case-lambda
+    [() (open-tab (make-environment) "/programs/editor.ss" "editor")]
+    [(path)
+     (define env (make-environment))
+     (open-tab
+       (lambda ()
+         (parameterise ((module-name 'editor))
+           (load "/programs/editor.ss" env))
+         ((hash-ref env (escape-symbol 'editor-main)) path))
+       path)]))
+
 (define (held? s)
   (hash-ref held (car s)))
 
 (define (resume ev)
   (let ((x (active-tab)))
-    (call* (hash-ref x "window") "setVisible" #t)
-    (call* (hash-ref x "window") "redraw")
-    (call/native '(term redirect) (hash-ref x "window"))
-    (case (list (apply coroutine-resume (cons (hash-ref x "thread") ev)))
-      [(#t . ev)]
-      [(#f . err)
-       (call/native '(table remove) active-tabs (active-tab 'num))
-       (prev-tab)])))
+    (when (and x (or (= (car ev) "terminate")
+                    (not (hash-ref x "filter"))
+                    (and (hash-ref x "filter")
+                         (= (hash-ref x "filter") (car ev)))))
+      (call* (hash-ref x "window") "setVisible" #t)
+      (call* (hash-ref x "window") "redraw")
+      (call/native '(term redirect) (hash-ref x "window"))
+      (case (list (apply coroutine-resume (cons (hash-ref x "thread") ev)))
+        [(#t . ev)
+         (if (pair? ev)
+           (hash-set! x "filter" (car ev))
+           (hash-set! x "filter" #f))]
+        [(#f . err)
+         (write err)
+         (call/native '(table remove) active-tabs (active-tab 'num))
+         (prev-tab)]))))
+
+(define (close-tab)
+  (call/native '(table remove) active-tabs (active-tab 'num))
+  (prev-tab))
 
 (define (next-tab)
   (if (> (+ 1 (active-tab 'num)) (tab-count))
@@ -130,7 +157,7 @@
        dead))
 
 (define (run)
-  (let loop ((ev (get-event-data)))
+  (let loop ((ev (list (call/native '(os pullEventRaw)))))
     (if (<= (tab-count) 0)
       (open-tab))
     (case ev
@@ -165,14 +192,13 @@
          (else (resume ev)))]
       [("terminate") (resume ev)]
       [else (resume* ev)])
-    (loop (get-event-data))))
+    (loop (list (call/native '(os pullEventRaw))))))
 
 (open-tab)
 
 (call* native-terminal "clear")
 (call* native-terminal "setCursorPos" 1 1)
 
-(active-tab 1)
 (draw-tab-line)
-
+(active-tab 1)
 (run)

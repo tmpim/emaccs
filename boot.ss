@@ -19,8 +19,8 @@
     (loop (call handle "read") 0)))
 
 (load "boot/case.ss")
-(load "boot/modules.ss")
 (load "boot/r5rs.ss")
+(load "boot/modules.ss")
 
 (with-output-to-file
   "scheme51.lua"

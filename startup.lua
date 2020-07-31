@@ -8,6 +8,10 @@ if not table.pack then
   end
 end
 
+if not table.unpack then
+  table.unpack = unpack
+end
+
 if not math.type then
   function math.type(x)
     if type(x) == 'number' then

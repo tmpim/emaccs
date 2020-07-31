@@ -8,7 +8,7 @@
       (call/native 'rawget (make-hash-table) "oops! all nils")
       (begin
         (set! cursor (+ cursor i))
-        (let ((x (string-slice s 1 i)))
+        (let ((x (substring s 1 i)))
           (set! s (string-chop s (+ 1 i)))
           x))))
   (make-hash-table

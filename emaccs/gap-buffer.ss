@@ -1,7 +1,7 @@
 (use-modules (scm-51 string))
 
 (define (make-gap-buffer str init-cursor)
-  (cons (string-slice str 1 init-cursor)
+  (cons (substring str 1 init-cursor)
         (string-chop str (+ 1 init-cursor))))
 
 (define (gap-buffer-insert buf s)
@@ -13,13 +13,13 @@
         (string-chop (cdr buf) (+ 1 i))))
 
 (define (gap-buffer-delete-backwards buf i)
-  (cons (string-slice (car buf) 1 (- (string-length (car buf)) i))
+  (cons (substring (car buf) 1 (- (string-length (car buf)) i))
         (cdr buf)))
 
 (define (gap-buffer-left buf i)
   (let ((first (car buf))
         (second (cdr buf)))
-    (cons (string-slice first 1 (- (string-length first) i))
+    (cons (substring first 1 (- (string-length first) i))
           (string-append
             (string-chop first (+ 1 (- (string-length first) i)))
             second))))
@@ -29,7 +29,7 @@
         (second (cdr buf)))
     (cons (string-append
             first
-            (string-slice second 1 i))
+            (substring second 1 i))
           (string-chop second (+ 1 i)))))
 
 (define (gap-buffer-home buf)
@@ -41,5 +41,5 @@
 (define (gap-buffer-kill-backwards buf)
   (case (string-find (car buf) "%w+%s*$")
     [(start . end)
-     (cons (string-slice (car buf) 0 (- start 1)) (cdr buf))]
+     (cons (substring (car buf) 0 (- start 1)) (cdr buf))]
     [false buf]))

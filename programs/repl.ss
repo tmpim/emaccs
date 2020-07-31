@@ -84,7 +84,7 @@
         (hash-for-each
           macros
           (lambda (name value)
-            (if (= (string-slice name 1 (string-length ident)) ident)
+            (if (= (substring name 1 (string-length ident)) ident)
               (stream-yield
                 (string-chop name (+ 1 already-typed))))))
         (set! ident (escape-symbol (call/native 'symbol ident)))
@@ -92,7 +92,7 @@
         (hash-for-each
           ENV
           (lambda (name value)
-            (if (= (string-slice name 1 (string-length ident)) ident)
+            (if (= (substring name 1 (string-length ident)) ident)
               (stream-yield
                 (string-chop (unescape-symbol name)
                              (+ 1 already-typed))))))
@@ -118,7 +118,7 @@
   (case (string-find line pattern)
     [(start . end)
      (term-set-text-colour (colour))
-     (term-write (string-slice line start end))
+     (term-write (substring line start end))
      (term-set-text-colour (text-colour))
      (list (string-chop line (+ 1 end)) end)]
     [else #f]))
@@ -126,17 +126,17 @@
 (define (make-token line colour pattern)
   (case (string-find line pattern)
     [(start . end)
-     (list (string-chop line (+ 1 end)) (string-slice line start end) end (colour))]
+     (list (string-chop line (+ 1 end)) (substring line start end) end (colour))]
     [else #f]))
 
 (define (write-ident-token line)
   (case (string-find line (string-append "^" identifier-pattern))
     [(start . end)
-     (define s (string-slice line start end))
+     (define s (substring line start end))
      (if (string->number s)
        (term-set-text-colour (literal-colour))
        (term-set-text-colour
-         ((case (string-slice line start end)
+         ((case (substring line start end)
             ["lambda" macro-colour]
             ["if" macro-colour]
             ["quote" macro-colour]
@@ -147,7 +147,7 @@
                                        (string->symbol x))))
              defined-ident-colour]
             [else identifier-colour]))))
-     (term-write (string-slice line start end))
+     (term-write (substring line start end))
      (term-set-text-colour (text-colour))
      (list (string-chop line (+ 1 end)) end)]
     [else #f]))
@@ -162,8 +162,8 @@
                       (write-token line literal-colour    "^-?[0-9/%.]+")
                       (write-token line literal-colour    "^#[tf]")
                       (write-token line string-colour     "^#\\%w+")
-                      (write-token line text-colour       "^[^%w_]")
-                      (list ""))))))
+                      (write-token line text-colour       "^[^%w]+")
+                      (list "no match"))))))
 
 (define delimiters
   (make-hash-table (cons " " #t)
@@ -234,7 +234,7 @@
                    (string-length (repl-prompt))
                    (string-length (car buffer)))
                 y)))))
-    (case ev
+    (case ev 
       [(("char" ch) #:when (hash-ref repl-key-bindings ch))
        (set! needs-repaint #t)
        (set! buffer ((hash-ref repl-key-bindings key) buffer))

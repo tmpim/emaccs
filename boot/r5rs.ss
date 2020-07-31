@@ -55,6 +55,11 @@
 (define (ninth x) (car (cddddr (cddddr x))))
 (define (tenth x) (cadr (cddddr (cddddr x))))
 
+(define (integer? x)
+  "Return #t if ,x is an exact number that is not a rational."
+  (and (exact? x)
+       (not (rational? x))))
+
 (define map
   (begin
     (define (fold1 f z xs)
@@ -329,6 +334,27 @@
    monotonically nonincreasing.")
 (define-iterated-comparison string=? "local x, y = ...; return x == y" string?
   "Return #t if all the strings given are equal.")
+
+(define string-append
+  (begin
+    (define append2 (call/native 'load "local x, y = ...; return x .. y"))
+    (case-lambda
+     "Concatenate any number of strings."
+     (() "")
+     ((x) x)
+     ((x y) (append2 x y))
+     ((x y . z) (apply string-append (cons (append2 x y) z))))))
+
+(define (string-length s)
+  (check-parameter s string? string-ref)
+  "Return the number of bytes in the string ,s."
+  ((call/native 'load "return #(...)") s))
+
+(define (string-ref s i)
+  "Return the ,i-th byte in the string ,s."
+  (check-parameter s string? string-ref)
+  (check-parameter i integer? string-ref)
+  ((call/native 'load "local s, i = ...; return s:sub(i, i)") s i))
 
 (define (exp c) "Return e^c."    (call/native '(math exp) (exact->inexact c)))
 (define (log c) "Return ln(c)."  (call/native '(math log) (exact->inexact c)))

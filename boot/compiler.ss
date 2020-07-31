@@ -5,13 +5,13 @@
 (define (expand-for-compilation expr)
   (expand '(let) expr))
 
-(define (format . args)
+(define (compiler-format . args)
   (apply ((call/native 'load "return string.format")) args))
 
 (define (escape-symbol e)
   (if (not (symbol? e))
     (error "not a symbol" e))
-  (format "_%s"
+  (compiler-format "_%s"
           (call/native '(string gsub)
              (car e)
              "[^%w_]"
@@ -58,16 +58,16 @@
 
 (define (compile-simple-expression return e)
   (cond
-    ((rational? e) (return (format "rational(%d, %d)" (car e) (cdr e))))
+    ((rational? e) (return (compiler-format "rational(%d, %d)" (car e) (cdr e))))
     ((number? e)  (return (call/native 'tostring e)))
-    ((string? e)  (return (format "%q" e)))
+    ((string? e)  (return (compiler-format "%q" e)))
     ((keyword? e) (error "use of keyword in expression position: " e))
     ((symbol? e)
      (if (hash-ref (car variables-in-scope) (escape-symbol e))
        (return (escape-symbol e))
        (begin
          (hash-set! (car variables-in-scope) (escape-symbol e) #t)
-         (return (format "var(%s, %q)" (escape-symbol e) (car e))))))
+         (return (compiler-format "var(%s, %q)" (escape-symbol e) (car e))))))
     ((= e #t) (return "true"))
     ((= e #f) (return "false"))
     ((= e #eof) (return "scm_eof"))
@@ -79,10 +79,10 @@
 
 (define (compile-quote return e)
   (cond
-    ((keyword? e) (return (format "keyword('%s')" (car e))))
-    ((symbol? e) (return (format "symbol('%s')" (car e))))
+    ((keyword? e) (return (compiler-format "keyword('%s')" (car e))))
+    ((symbol? e) (return (compiler-format "symbol('%s')" (car e))))
     ((pair? e)
-     (return (format "{%s,%s}"
+     (return (compiler-format "{%s,%s}"
                      (compile-quote (lambda (x) x) (car e))
                      (compile-quote (lambda (x) x) (cdr e)))))
     (else (compile-simple-expression return e))))
@@ -98,7 +98,7 @@
   (if (null? args)
     empty
     (if (symbol? (car args))
-      (format "%s %s %s"
+      (compiler-format "%s %s %s"
          (escape-symbol (car args))
          (if (and (null? (cdr args)) (eq? empty "")) "" ", ")
          (simple-argument-list empty (cdr args)))
@@ -115,18 +115,18 @@
   (in-scope args
     (cond
      ((list? args)
-      (return (format "(%s)\n %s\n end"
+      (return (compiler-format "(%s)\n %s\n end"
                       (simple-argument-list "" args)
-                      (compile-body (lambda (x) (format "return %s" x)) body))))
+                      (compile-body (lambda (x) (compiler-format "return %s" x)) body))))
      (else
        (let ((args-and-rest (complex-argument-list args)))
          (let ((proper (car args-and-rest))
                (rest (cdr args-and-rest)))
            (hash-set! (car variables-in-scope) (car rest) #t)
-           (return (format "(%s)\n local %s = list(...);\n %s\n end"
+           (return (compiler-format "(%s)\n local %s = list(...);\n %s\n end"
                            (simple-argument-list "..." proper)
                            (escape-symbol rest)
-                           (compile-body (lambda (x) (format "return %s" x))
+                           (compile-body (lambda (x) (compiler-format "return %s" x))
                                          body)))))))))
 
 (define (atomic? p)
@@ -144,17 +144,17 @@
     ((and (pair? b) (null? (cdr b))) (compile-expr return (car b) #t))
     ((atomic? (car b)) (compile-body return (cdr b)))
     ((define? (car b))
-     (format "%s;\n %s"
+     (compiler-format "%s;\n %s"
              (apply compile-body-define (cdar b))
              (compile-body return (cdr b))))
-    (else (format "%s;\n %s"
+    (else (compiler-format "%s;\n %s"
                  (compile-expr (lambda (x) x) (car b))
                  (compile-body return (cdr b))))))
 
 (define (compile-body-define name . body)
   (if (pair? name)
     (compile-body-define (car name) `(lambda ,(cdr name) . ,body))
-    (compile-expr (lambda (x) (format "local %s;\n %s = %s"
+    (compile-expr (lambda (x) (compiler-format "local %s;\n %s = %s"
                                       (escape-symbol name)
                                       (escape-symbol name)
                                       x))
@@ -165,7 +165,7 @@
     ""
     (if (define? (car alist))
       (error "illegal define expression" (car alist) "in argument list")
-      (format "%s%s %s"
+      (compiler-format "%s%s %s"
               (compile-expr (lambda (x) x) (car alist))
               (if (null? (cdr alist)) "" ", ")
               (compile-args (cdr alist))))))
@@ -188,7 +188,7 @@
 
 (define (compile-builtin-function func args)
   (define (fallback)
-    (format "%s(%s)" (compile-expr (lambda (x) x) func)
+    (compiler-format "%s(%s)" (compile-expr (lambda (x) x) func)
                      (compile-args args)))
   (let ((rules (hash-ref compilation-rules (car func))))
     (cond
@@ -202,10 +202,10 @@
            (fallback)))]
       [else (fallback)])))
 
-(define-compilation-rule (car arg) (compile-expr (lambda (x) (format "(%s)[1]" x)) arg))
-(define-compilation-rule (cdr arg) (compile-expr (lambda (x) (format "(%s)[2]" x)) arg))
+(define-compilation-rule (car arg) (compile-expr (lambda (x) (compiler-format "(%s)[1]" x)) arg))
+(define-compilation-rule (cdr arg) (compile-expr (lambda (x) (compiler-format "(%s)[2]" x)) arg))
 (define-compilation-rule (cons head tail)
-  (format "{%s, %s}"
+  (compiler-format "{%s, %s}"
           (compile-expr (lambda (x) x) head)
           (compile-expr (lambda (x) x) tail)))
 
@@ -217,20 +217,20 @@
      ; Lambda with documentation
      (let ((ret return))
        (compile-lambda (lambda (x)
-                         (ret (format "setmetatable({args=%s,doc=%q}, { __call = function%s })"
+                         (ret (compiler-format "setmetatable({args=%s,doc=%q}, { __call = function%s })"
                                       (compile-expr (lambda (x) x) `',args) doc x)))
                        (cons (gensym) args)
                        (cons body1 body)))]
     [('lambda args . body)
      (let ((ret return))
-       (compile-lambda (lambda (x) (ret (format "(function%s)" x))) args body))]
+       (compile-lambda (lambda (x) (ret (compiler-format "(function%s)" x))) args body))]
     [(('define name value) #:when (symbol? name))
      (call/native 'rawset (car variables-in-scope) (escape-symbol name) #t)
      ; (if (builtin-function? name)
      ;   (warn-redefinition name))
-     (format "%s;\n %s"
+     (compiler-format "%s;\n %s"
              (compile-expr
-               (lambda (v) (format "%s = %s" (escape-symbol name) v))
+               (lambda (v) (compiler-format "%s = %s" (escape-symbol name) v))
                value)
              (return (escape-symbol name)))]
     [('define (name . args) . body)
@@ -241,7 +241,7 @@
      (let ((ret return))
        (compile-expr
            (lambda (v)
-             (ret (format
+             (ret (compiler-format
                    "(function()\n %s = scm_set_helper(%s, %s, %q);\n return %s\n end)()"
                    (escape-symbol name) (escape-symbol name) v (car name) (escape-symbol name))))
            expr))]
@@ -250,31 +250,31 @@
     [('if c t)
      (define it (escape-symbol (gensym)))
      (if (= (car is-tail) #t)
-       (format "if %s then %s else return false end"
+       (compiler-format "if %s then %s else return false end"
                (compile-expr (lambda (x) x) c)
                (compile-expr return t #t))
        (return
-         (format "(function(%s)\n if %s then\n %s else\n return false\n end\n end)(%s)"
+         (compiler-format "(function(%s)\n if %s then\n %s else\n return false\n end\n end)(%s)"
                  it it
-                 (compile-expr (lambda (x) (format "return %s" x)) t)
+                 (compile-expr (lambda (x) (compiler-format "return %s" x)) t)
                  (compile-expr (lambda (x) x) c))))]
     [('if c t e)
      (define it (escape-symbol (gensym)))
      (if (= (car is-tail) #t)
-       (format "if %s then %s else %s end"
+       (compiler-format "if %s then %s else %s end"
                (compile-expr (lambda (x) x) c)
                (compile-expr return t #t)
                (compile-expr return e #t))
        (return
-         (format "(function(%s)\n if %s then\n %s else\n %s\n end\n end)(%s)"
+         (compiler-format "(function(%s)\n if %s then\n %s else\n %s\n end\n end)(%s)"
                  it it
-                 (compile-expr (lambda (x) (format "return %s" x)) t)
-                 (compile-expr (lambda (x) (format "return %s" x)) e)
+                 (compile-expr (lambda (x) (compiler-format "return %s" x)) t)
+                 (compile-expr (lambda (x) (compiler-format "return %s" x)) e)
                  (compile-expr (lambda (x) x) c))))]
     [((fun . args) #:when (builtin-function? fun))
      (return (compile-builtin-function fun args))]
     [(fun . args)
-     (return (format "%s(%s)"
+     (return (compiler-format "%s(%s)"
                (compile-expr (lambda (x) x) fun)
                (compile-args args)))]))
 
@@ -292,9 +292,9 @@
 
 (define repl
   (case-lambda
-    (() (repl #t 1 (environment)))
-    ((p) (repl p 1 (environment)))
-    ((p i) (repl p i (environment)))
+    (() (repl #t 1 ENV))
+    ((p) (repl p 1 ENV))
+    ((p i) (repl p i ENV))
     ((p i env)
      (if p
        (cond
@@ -321,14 +321,14 @@
       (if (eq? x #eof)
         #t
         (begin
-          (display (compile-expr (lambda (x) (format "ignore(%s)" x))
+          (display (compile-expr (lambda (x) (compiler-format "ignore(%s)" x))
                                  (expand x)))
           (loop)))))
   (with-input-from-file path loop))
 
 (define eval
   (case-lambda
-    [(e) (compile-and-run e (environment))]
+    [(e) (compile-and-run e ENV)]
     [(e env) (compile-and-run e env)]))
 
 (define load
@@ -367,14 +367,14 @@
 
 (define-syntax (define/native name body)
   (if (pair? name)
-    `(run/native ,(format "function %s(%s) %s end"
+    `(run/native ,(compiler-format "function %s(%s) %s end"
                           (escape-symbol (car name))
                           (simple-argument-list "" (cdr name))
                           body))
-    `(run/native ,(format "%s = %s" (escape-symbol (car name)) body))))
+    `(run/native ,(compiler-format "%s = %s" (escape-symbol (car name)) body))))
 
 (define (compile e)
-  (compile-expr (lambda (x) (format "return %s" x)) (expand e)))
+  (compile-expr (lambda (x) (compiler-format "return %s" x)) (expand e)))
 
 (run/native "if not _ENV then _ENV = _G end")
 (define/native (environment) "return _ENV")

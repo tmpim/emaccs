@@ -3,13 +3,16 @@
 (define (path->string mod-path)
   (case mod-path
     [() (error "empty path")]
-    [((x) #:when (symbol? x)) (format "%s.ss" (car x))]
+    [((x) #:when (symbol? x)) (compiler-format "%s.ss" (car x))]
     [((a . b) #:when (symbol? a))
-     (format "%s/%s" (car a) (path->string b))]))
+     (compiler-format "%s/%s" (car a) (path->string b))]))
 
 (define loaded-modules (make-hash-table))
-(if (= platform "Scheme 51")
-  (define/native (string-append x y) "return _x .. _y"))
+
+(define (dofile p)
+  (define h (call/native 'assert (call/native '(fs open) p "r")))
+  (define c (call* h "readAll"))
+  ((call/native 'load c p "t" ENV)))
 
 (define do-load-module
   (if (hash-ref (environment) "fs")
@@ -23,13 +26,13 @@
         ((and (call/native '(fs exists) module-aux)
               (>= (hash-ref (call/native '(fs attributes) module-aux) "modification")
                   mod-mtime))
-         (call/native 'dofile module-aux))
+         (dofile module-aux))
         (else
           (with-output-to-file
             module-aux
             (lambda ()
               (compile-file path)))
-          (call/native 'dofile module-aux))))
+          (dofile module-aux))))
     load))
 
 (define load-mod

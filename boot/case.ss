@@ -99,8 +99,8 @@
     [(() . body) `(begin . ,body)]))
 
 (define-syntax (letrec vars . body)
-  `((lambda (,(map car vars))
-      (begin . ,(map (lambda (x) `(set! ,(car x) ,(cdr x))) vars))
+  `((lambda ,(map car vars)
+      (begin . ,(map (lambda (x) `(set! ,(car x) ,(cadr x))) vars))
       . ,body)
     . ,(map (lambda a #f) vars))) 
 
@@ -117,10 +117,10 @@
         [(() . body)
          `(begin . ,(expand body))]))))
 
-(define-syntax letrec
+(define-syntax let*
   (case-lambda
     ((() . body) `(begin . ,body))
     ((((var1 exp1) . vars) . body)
-     `((lambda (,var)
+     `((lambda (,var1)
          (letrec ,vars . ,body))
        ,exp1))))

@@ -99,11 +99,11 @@ function _apply(f, t)
     args[i] = t[1]
     i, n, t = i + 1, n + 1, t[2]
   end
-  local ok, err = pcall(f, unpack(args, 1, n))
-  if not ok then
-    error(err, 2)
+  local r = table.pack(pcall(f, unpack(args, 1, n)))
+  if not r[1] then
+    error(err[2], 2)
   else
-    return err
+    return table.unpack(r, 2, r.n)
   end
 end
 
