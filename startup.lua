@@ -55,6 +55,28 @@ local function ungetchar(ch)
   table.insert(input, 1, ch)
 end
 
+local function peek()
+  local ch = getchar()
+  ungetchar(ch)
+  return ch
+end
+
+local function peekp(c)
+  return peek() == c
+end
+
+local function eat(chs, i)
+  local i = i or 1
+  if i > #chs then
+    return
+  elseif peekp(chs:sub(i, i)) and i <= #chs then
+    getchar()
+    return eat(chs, i + 1)
+  else
+    return error("unexpected character " .. getchar())
+  end
+end
+
 local function skip_spaces()
   local ch = getchar()
   if ch == ' ' or ch == '\t' or ch == '\n' then
@@ -87,20 +109,51 @@ function rational(a, b)
   end
 end
 
-local function read_number(acc, allow_dot)
+local function insist_delim(x)
+  local ch = peek()
+  if ch == ' ' or ch == '\t' or ch == '\n' or ch == ')' or ch == ']' or ch == '}' then
+    return x
+  else
+    return error("expected delimiter, got " .. getchar())
+  end
+end
+
+local function is_char_base(radix)
+  if radix <= 10 then
+    local upper = string.char(string.byte('9') - (10 - radix))
+    return function(ch)
+      return '0' <= ch and ch <= upper
+    end
+  elseif radix <= 26 then
+    local upper = string.char(string.byte('z') - (26 - radix))
+    return function(ch)
+      return ('0' <= ch and ch <= '9') or ('a' <= ch and ch <= upper)
+    end
+  elseif radix <= 52 then
+    local upper = string.char(string.byte('Z') - (52 - radix))
+    return function(ch)
+      return ('0' <= ch and ch <= '9')
+          or ('a' <= ch and ch <= 'z')
+          or ('A' <= ch and ch <= upper)
+    end
+  end
+end
+
+local function read_number(acc, radix, allow_dot)
   local allow_dot = allow_dot == nil and true or false
+  local p = is_char_base(radix or 10)
   local ch = getchar()
-  if '0' <= ch and ch <= '9' then
-    return read_number(acc .. ch)
+  if p(ch) then
+    return insist_delim(read_number(acc .. ch, radix))
   elseif ch == '.' and allow_dot then
-    local dec = read_number('', false)
-    return read_number(acc .. ch .. tostring(dec))
+    local dec = read_number('', radix, false)
+    return insist_delim(read_number(acc .. ch .. tostring(dec)))
   elseif ch == '/' and allow_dot then
-    local denom = read_number('', false)
-    return rational(tonumber(acc), tonumber(denom))
+    local denom = read_number('', radix, false)
+    return insist_delim(rational(tonumber(acc), tonumber(denom)))
   else
     ungetchar(ch)
-    return assert(tonumber(acc))
+    return insist_delim(tonumber(acc or '0', radix))
   end
 end
 
@@ -145,37 +198,6 @@ local function read_symbol(acc, k)
   end
 end
 
-local function peek()
-  local ch = getchar()
-  ungetchar(ch)
-  return ch
-end
-
-local function peekp(c)
-  return peek() == c
-end
-
-local function eat(chs, i)
-  local i = i or 1
-  if i > #chs then
-    return
-  elseif peekp(chs:sub(i, i)) and i <= #chs then
-    getchar()
-    return eat(chs, i + 1)
-  else
-    return error("unexpected character " .. getchar())
-  end
-end
-
-local function insist_delim(x)
-  local ch = peek()
-  if ch == ' ' or ch == '\t' or ch == '\n' then
-    return x
-  else
-    return error("expected delimiter, got " .. getchar())
-  end
-end
-
 local read_sexpr
 
 local function read_character()
@@ -190,6 +212,9 @@ local function read_character()
     if peekp('e') then
       eat('ewline')
       return '\n'
+    elseif peekp('u') then
+      eat('ull')
+      return '\0'
     end
     return insist_delim('n')
   elseif ch == 't' then
@@ -198,6 +223,30 @@ local function read_character()
       return '\t'
     end
     return insist_delim('t')
+  elseif ch == 'b' then
+    if peekp('a') then
+      eat('ackspace')
+      return '\08'
+    end
+    return insist_delim('b')
+  elseif ch == 'e' then
+    if peekp('s') then
+      eat('scape')
+      return '\x1b'
+    end
+    return insist_delim('e')
+  elseif ch == 'd' then
+    if peekp('e') then
+      eat('elete')
+      return '\x7f'
+    end
+    return insist_delim('d')
+  elseif ch == 'x' then
+    local acc = '0x'
+    while tonumber(peek(), 16) do
+      acc = acc .. getchar()
+    end
+    return insist_delim(utf8.char(tonumber(acc)))
   else
     return ch
   end
@@ -208,21 +257,27 @@ local scm_nil, scm_eof, eval, callproc = {}, {}, {}, {}
 local function read_special_atom()
   local ch = getchar()
   if ch == 't' then
-    return true
+    return insist_delim(true)
   elseif ch == 'f' then
-    return false
+    return insist_delim(false)
   elseif ch == '\\' then
     return read_character()
   elseif ch == ';' then
     read_sexpr()
     return true
   elseif ch == ':' then
-    return read_symbol('', function(s)
+    return insist_delim(read_symbol('', function(s)
       return {[0] = symbol, kw = true, s}
-    end)
+    end))
   elseif ch == 'e' then
     eat('of')
-    return scm_eof
+    return insist_delim(scm_eof)
+  elseif ch == 'o' then
+    return read_number('', 8)
+  elseif ch == 'x' then
+    return read_number('', 16)
+  elseif ch == 'b' then
+    return read_number('', 2)
   else
     return error('unexpected special atom ' .. ch)
   end
@@ -333,20 +388,20 @@ end
 local eval, apply, callproc, eval_args, apply_dispatch
 --}}}
 
-local function scm_print(e)
+local function scm_print(e, display)
   if type(e) == 'table' then
     if symbolp(e) then
       write(e[1])
     elseif e[0] == eval then
       write '(lambda '
-      scm_print(e[1])
+      scm_print(e[1], display)
       write ' '
-      scm_print(e[3])
+      scm_print(e[3], display)
       write ')'
     elseif consp(e) then
       write '('
       repeat
-        scm_print(e[1])
+        scm_print(e[1], display)
         if consp(e[2]) then
           write ' '
         end
@@ -354,7 +409,7 @@ local function scm_print(e)
       until not consp(e)
       if e ~= scm_nil then
         write ' . '
-        scm_print(e)
+        scm_print(e, display)
       end
       write ')'
     elseif e == scm_nil then
@@ -376,9 +431,9 @@ local function scm_print(e)
       write '(make-hash-table '
       for k, v in pairs(e) do
         write '('
-        scm_print(k)
+        scm_print(k, display)
         write ' . '
-        scm_print(v)
+        scm_print(v, display)
         write ')'
         if next(e, k) ~= nil then
           write ' '
@@ -386,6 +441,16 @@ local function scm_print(e)
       end
       write ')'
     end
+  elseif type(e) == 'string' then
+    if display then
+      write(e)
+    else
+      write(('%q'):format(e))
+    end
+  elseif e == true then
+    write('#t')
+  elseif e == false then
+    write('#f')
   else
     write(tostring(e))
   end
@@ -613,7 +678,7 @@ local function scm_load(okk, errk, env, path)
   end
 end
 --}}}
---
+
 local function num2rat(x)
   if type(x) == 'table' then
     return x
@@ -773,6 +838,12 @@ local scm_env = {
     local a = table.pack(...)
     for i = 1, a. n do
       scm_print(a[i])
+    end
+  end,
+  display = function(...)
+    local a = table.pack(...)
+    for i = 1, a. n do
+      scm_print(a[i], true)
     end
   end,
   gensym = function()
@@ -943,6 +1014,26 @@ defproc('with-input-from-file', function(ok, err, env, p, f)
   end
 end)
 
+defproc('with-output-to-file', function(ok, err, env, p, f)
+  local h, w = io.open(p, 'w'), write
+  if h then
+    function write(s)
+      h:write(s)
+    end
+    return apply_dispatch(f, scm_nil, env, function(r)
+      write = w
+      h:close()
+      return ok(r)
+    end, function(e)
+      write = w
+      h:close()
+      return err(e)
+    end)
+  else
+    return throw(err, 'failed to open', p, 'for reading')
+  end
+end)
+
 defproc('car', function(ok, err, env, p)
   if type(p) == 'table' then
     return ok(p[1])
@@ -1024,23 +1115,6 @@ else
   scm_env.platform = mksymbol('puc-lua')
 end
 --}}}
-
-_G._read      = read_sexpr
-_G.scm_nil    = scm_nil
-_G.scm_eof    = scm_eof
-_G.symbol     = mksymbol
-function _G.keyword(s)
-  return {[0]=symbol,kw=true,s}
-end
-_G._symbolS63 = symbolp
-_G._eqS63     = scm_eq
-function _G._write(...)
-  local t = table.pack(...)
-  for i = 1, t.n do
-    scm_print(t[i])
-  end
-  return true
-end
 scm_env.read  = read_sexpr
 
 local handles = {}
@@ -1118,6 +1192,8 @@ end
 dofile 'operators.lua'
 --}}}
 
+--{{{
+
 return scm_load(repl, function(x)
   print('error while scm_loading boot file:')
   if x[0] == 'error' then
@@ -1125,5 +1201,7 @@ return scm_load(repl, function(x)
       scm_print(x[i])
       write(' ')
     end
+  else
+    scm_print(x)
   end
 end, {scm_env,scm_nil}, "boot/boot.ss")

@@ -49,7 +49,7 @@
        ,s)))
 
 (define (warn . rest)
-  (apply write `("-- Warning: " ,@rest #\newline)))
+  (apply display `("-- Warning: " ,@rest #\newline)))
 
 (define-syntax (warn-redefinition name)
   `(warn "redefinition of built-in function "
@@ -298,20 +298,20 @@
     ((p i env)
      (if p
        (cond
-         ((eq? platform "Boot Scheme") (write "boot> "))
-         ((eq? platform "Scheme 51") (write "> "))
-         (else (write "load> "))))
+         ((eq? platform "Boot Scheme") (display "boot> "))
+         ((eq? platform "Scheme 51") (display "> "))
+         (else (display "load> "))))
      (let ((x (read)))
        (if (eq? x #eof)
          i
          (begin
            (catch (lambda ()
                     ((if p write (lambda (x) #f))
-                     (compile-and-run x env)
-                     #\newline))
+                     (compile-and-run x env))
+                    (if p (newline)))
                 (lambda (e)
-                  (write "Error in user code: " e #\newline)))
-           (repl p (+ 1 i))))))))
+                  (display "Error in user code: " e #\newline)))
+           (repl p (+ 1 i) env)))))))
 
 (define *loaded-modules* '())
 
@@ -321,8 +321,8 @@
       (if (eq? x #eof)
         #t
         (begin
-          (write (compile-expr (lambda (x) (format "ignore(%s)" x))
-                               (expand x)))
+          (display (compile-expr (lambda (x) (format "ignore(%s)" x))
+                                 (expand x)))
           (loop)))))
   (with-input-from-file path loop))
 
@@ -341,7 +341,7 @@
 (define-syntax (run/native r)
   `(begin
      (if booting
-       (write #\newline ,r #\newline))
+       (display #\newline ,r #\newline))
      ((call/native 'load ,r))))
 
 (run/native

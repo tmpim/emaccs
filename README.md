@@ -21,65 +21,22 @@ Booting
 =======
 
 Both the interpreted and compiled implementations initially prompt drop
-to a Scheme REPL, which loads the file `boot.ss` (The compiled
+to a Scheme REPL, which loads the file `boot/boot.ss` (The compiled
 implementation has this file baked in). Commands can be written to the
 REPL on standard input, with output collected from standard output. The
-`boot.sh` script loads and compiles the necessary files to produce a
-compiled image capable of booting again.
+`boot.ss` Scheme file loads and compiles the necessary files to produce
+a compiled image capable of booting again.
 
-Booting in CC
--------------
+The `boot.ss` script should work on all platforms that Scheme 51
+supports, that is, Lua, LuaJIT, and ComputerCraft.
 
-Since the interpreter is ungodly slow, booting in computercraft is not
-recommended, and, in fact, barely possible. ComputerCraft does not
-support redirecting output, so a hack will have to be used instead.
-
-The `scm_print` procedure of the interpreter, which is hooked up to the
-Scheme procedure `(write)`, uses the Lua global `write` for output.
-Overwriting the global `write` with something that writes to a file will
-then have the effect of redirecting compiler output to a file.
-
-To compile:
+To boot on Linux:
 ```lua
-(load "case.ss")         ; needed for compiler
-(load "compiler.ss")     ; the compiler itself
-(compile-file "boot.ss") ; writes the compiled code to stdout
-(compile-file "case.ss")
-(compile-file "compiler.ss")
+# first time
+$ lua startup.lua < boot.ss
+# afterwards
+$ lua -l scheme51 -e 'repl()' < boot.ss
 ```
-
-Since the interpreter supports applying Lua procedures, compiled procs
-and interpreted procs can be freely mixed. Something like this can be
-used to replace the interpreted REPL with a compiled REPL live:
-
-```scheme
-(load "case.ss")     ; initialise the compiler
-(load "compiler.ss")
-(load "boot.ss")     ; initialise the compiled environment
-(load "case.ss")
-(load "compiler.ss")
-(repl #t 0)
-```
-
-If this succeeded, the prompt should have changed to `load>`.
-
-Using a booted REPL
--------------------
-
-This will be orders of magnitude faster than the interpreter. Get one by
-doing `bash boot.sh startup.lua` in a competent UNIX environment: the
-produced file `scheme51.lua` will function as though the six commands
-above had been run. The booted REPL has the same `>` prompt as the
-interpreter REPL.
-
-You can check whether or not an implementation was booted by running:
-
-```
-> platform
-```
-
-If it's either `Scheme 51` or `Boot Scheme`, this is the compiler.
-Otherwise, it's the interpreter.
 
 The Scheme 51 System
 ====================

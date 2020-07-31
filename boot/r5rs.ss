@@ -375,7 +375,7 @@
 
 (define (newline)
   "Produces an end-of-line character on the standard output port."
-  (write #\newline))
+  (display #\newline))
 
 (define eqv?
   (begin
@@ -412,3 +412,7 @@
     (if (>= x k)
       '()
       (cons init (loop (+ 1 x))))))
+
+(define (boolean? b)
+  "Return #t if ,b is a boolean."
+  (or (= b #t) (= b #f)))

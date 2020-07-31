@@ -3,9 +3,7 @@
              (scm-51 control)
 
              (emaccs gap-buffer)
-             (emaccs terminal)
-
-             (srfi srfi-17))
+             (emaccs terminal))
 
 (define (get-event-data)
   (call-with-values (lambda () (call/native '(os pullEvent)))
@@ -92,7 +90,7 @@
         (set! ident (escape-symbol (call/native 'symbol ident)))
         ; Search bindings
         (hash-for-each
-          (environment)
+          ENV
           (lambda (name value)
             (if (= (string-slice name 1 (string-length ident)) ident)
               (stream-yield
@@ -145,8 +143,8 @@
             ["set!" macro-colour]
             ["define" macro-colour]
             [(x #:when (hash-ref macros x)) macro-colour]
-            [(x #:when (hash-ref (environment) (escape-symbol
-                                                 (string->symbol x))))
+            [(x #:when (hash-ref ENV (escape-symbol
+                                       (string->symbol x))))
              defined-ident-colour]
             [else identifier-colour]))))
      (term-write (string-slice line start end))
@@ -185,7 +183,7 @@
     ((string? shadow)
      (term-write shadow))
     ((null? shadow) #f)
-    (else (write shadow)))
+    (else (display shadow)))
   (term-set-text-colour (text-colour)))
 
 (define (interact-line)
@@ -353,13 +351,14 @@
   "Run the fancy REPL."
   (set! shadow #f)
   (let ((input (interact-line)))
-    (write #\newline)
+    (display #\newline)
     (catch
       (lambda ()
         (write (eval (with-input-from-file
                        (input-from-string (string-append input "\n"))
-                       read))
-            #\newline))
+                       read)
+                     ENV))
+        (newline))
       (lambda (e)
         (write "Error:")
         (if (string? e)
@@ -368,7 +367,7 @@
              (write (string-chop e (+ 1 start)))]
             [else (write e)])
           (write e))
-        (write #\newline)))
+        (display #\newline)))
     (scheme-interaction (+ 2 line))))
 
 (define (explain proc)
@@ -386,19 +385,19 @@
   (case (documentation-for-procedure proc)
     [#f #f]
     [s
-      (write "Procedure arguments: " #\newline)
-      (write "  " (hash-ref proc "args") "\n\n")
-      (write "Documentation:\n  ")
+      (display "Procedure arguments: " #\newline)
+      (display "  " (hash-ref proc "args") "\n\n")
+      (display "Documentation:\n  ")
       (let loop ((token (first-token s)) (written 2) (lines 0))
         (case token
           [#f
-           (write #\newline)
+           (display #\newline)
            (+ 4 lines)]
           [((r t size c) #:when (>= (+ size written) (width)))
-           (write #\newline "  ")
+           (display #\newline "  ")
            (loop (list r t size c) 2 (+ 1 lines))]
           [(rest t s 'spaces)
-           (write " ")
+           (display " ")
            (loop (first-token rest) (+ written 1) lines)]
           [(rest text size colour)
            (term-set-text-colour colour)
@@ -407,10 +406,10 @@
            (loop (first-token rest) (+ written size) lines)]))]))
 
 (when (= (module-name) 'main)
-  (term-clear)
-  (term-set-cursor-pos 1 1)
-  (write ";; Scheme interaction\n")
-  (write (repl-prompt))
+  ; (term-clear)
+  ; (term-set-cursor-pos 1 1)
+  (display ";; Scheme interaction\n")
+  (display (repl-prompt))
   ; the line editor waits for an event to paint the first time.
   ; if we write the prompt here, it'll be painted over on the first event.
   ; no harm done

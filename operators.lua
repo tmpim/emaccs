@@ -1,7 +1,31 @@
+local symbol = mksymbol
 _G.add_rat = add_rat
 _G.over_rat = over_rat
 _G.times_rat = times_rat
 _G.minus_rat = minus_rat
+_G._read      = read_sexpr
+_G.scm_nil    = scm_nil
+_G.scm_eof    = scm_eof
+_G.symbol     = mksymbol
+function _G.keyword(s)
+  return {[0]=symbol,kw=true,s}
+end
+_G._symbolS63 = symbolp
+_G._eqS63     = scm_eq
+function _G._write(...)
+  local t = table.pack(...)
+  for i = 1, t.n do
+    scm_print(t[i])
+  end
+  return true
+end
+function _G._display(...)
+  local t = table.pack(...)
+  for i = 1, t.n do
+    scm_print(t[i], true)
+  end
+  return true
+end
 
 function _S43(...)
   local t = table.pack(...)
@@ -177,7 +201,7 @@ end
 
 local function rat_gt(x, y)
   if type(x) == 'number' and type(y) == 'number' then
-    return x < y
+    return x > y
   end
   local x = num2rat(x)
   local y = num2rat(y)

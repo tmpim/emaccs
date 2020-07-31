@@ -1,8 +1,10 @@
 (if (eq? platform 'computercraft)
   (if (call/native '(fs exists) "scheme51.lua")
     ((lambda ()
-       (write "loading pre-built Scheme..." #\newline)
-       (call/native 'dofile "scheme51.lua")))))
+       (display "loading pre-built Scheme..." #\newline)
+       (call/native 'dofile "scheme51.lua")
+       (display "loading startup file..." #\newline)
+       ((call/native 'load "return _load('emaccs/startup.ss')"))))))
 
 (define (not b)
   "Negate the boolean ,b."
@@ -286,4 +288,12 @@
 (define (call obj meth . args)
   "Call the method ,meth on the object ,obj, giving the ,args as
   variadic arguments."
+  (apply (hash-ref obj meth) (cons obj args)))
+
+(define (call* obj meth . args)
+  "Call the method ,meth on the object ,obj, giving the ,args as
+  variadic arguments."
   (apply (hash-ref obj meth) args))
+
+(if (= platform "Scheme 51")
+  (set! environment (lambda () ENV)))

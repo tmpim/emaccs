@@ -60,7 +60,9 @@
   `(*case #f ,expr ,case1 . ,cases))
 
 (define-syntax (case! expr case1 . cases)
-  `(*case (error "no matching case for " ,expr) ,expr ,case1 . ,cases))
+  `(*case
+     (error "no matching case for " ,expr " in " ',(cons case1 cases))
+     ,expr ,case1 . ,cases))
 
 (define-syntax case-lambda
   (lambda args
