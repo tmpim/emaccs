@@ -21,32 +21,28 @@
 
 (define-text-object (e x y)
   (case (string-find (text-after-point x y) "^%s*%w+")
-    [(start . end) `(fore ,x . ,(+ x end -1))]
+    [(start . end) `(fore ,x . ,(+ x end))]
     [#f #f]))
 
 (define-text-object (w x y)
-  (lambda (x y)
-    (case (string-find (text-after-point x y) "^%s*%w+%s*")
-      [(start . end) `(fore ,x . ,(+ x end))]
-      [#f #f])))
+  (case (string-find (text-after-point x y) "^%s*%w+%s*")
+    [(start . end) `(fore ,x . ,(+ x end))]
+    [#f #f]))
 
 (define-text-object (W x y)
-  (lambda (x y)
-    (case (string-find (text-after-point x y) "^%s*[^%s]+%s*")
-      [(start . end) `(fore ,x . ,(+ x end))]
-      [#f #f])))
+  (case (string-find (text-after-point x y) "^%s*[^%s]+%s*")
+    [(start . end) `(fore ,x . ,(+ x end))]
+    [#f #f]))
 
 (define-text-object (b x y)
-  (lambda (x y)
-    (case (string-find (text-before-point (- x 1) y) "%w+%s*$")
-      [(start . end) `(back ,start  . ,(+ 1 end))]
-      [#f #f])))
+  (case (string-find (text-before-point (- x 1) y) "%w+%s*$")
+    [(start . end) `(back ,start  . ,(+ 1 end))]
+    [#f #f]))
 
 (define-text-object (B x y)
-  (lambda (x y)
-    (case (string-find (text-before-point (- x 1) y) "[^%s]+%s*$")
-      [(start . end) `(back ,start  . ,(+ 1 end))]
-      [#f #f])))
+  (case (string-find (text-before-point (- x 1) y) "[^%s]+%s*$")
+    [(start . end) `(back ,start  . ,(+ 1 end))]
+    [#f #f]))
 
 (define (get-text-object action x y)
   (get-char-ev)

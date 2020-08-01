@@ -122,9 +122,8 @@
       (with-input-from-string
         (string-append (prompt-for-input "M-x ") " ")
         read))
-    (status-bar-message cmd)
-    (catch (lambda ()  (status-bar-message (eval cmd ENV)))
-           (lambda (e) (status-bar-message e)))
+    (catch (lambda () (status-bar-message (eval cmd ENV)))
+           (lambda e  (status-bar-message e)))
     (redraw-text)))
 
 (bind-for-mode 'insert #b010 't
@@ -160,6 +159,7 @@
           (catch
             (lambda ()
               (define it (proc x y))
+              (status-bar-message it)
               (if it
                 (if (= (car it) 'fore)
                   (set-cursor! (cddr it) y)
