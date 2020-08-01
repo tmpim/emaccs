@@ -1,3 +1,63 @@
+;; Basic mode switching
+
+;;; normal mode CTRL-c → nag the user
+(bind-for-mode 'normal #b010 'c
+  (lambda (x y)
+    (status-bar-message "Use M-x (exit) to exit the editor.")))
+
+;;; normal mode M-x → scheme interaction
+(bind-for-mode 'normal #b001 'x
+  (lambda (x y)
+    (call/native '(os pullEvent) "char")
+    (define cmd
+      (with-input-from-string
+        (string-append (prompt-for-input "M-x ") " ")
+        read))
+    (catch (lambda () (status-bar-message (eval cmd ENV)))
+           (lambda e  (status-bar-message e)))
+    (redraw-text)))
+
+;;; insert mode CTRL-c → normal mode
+(bind-for-mode 'insert #b010 'c (lambda () (current-mode 'normal) #t))
+
+;;; normal mode 'i' → insert before cursor
+(bind-for-mode 'normal 'i (lambda () (current-mode 'insert)))
+
+;;; normal mode 'a' → insert after cursor
+(bind-for-mode 'normal 'a
+  (lambda (x y)
+    (set-cursor! (min (+ 1 (length-of-line y)) (+ x 1)) y)
+    (current-mode 'insert)))
+
+;;; normal mode 'I' → insert at beginning of line
+(bind-for-mode 'normal #b100 'a
+  (lambda (x y)
+    (set-cursor! 1 y)
+    (current-mode 'insert)))
+
+;;; normal mode 'A' → insert at end of line
+(bind-for-mode 'normal #b100 'a
+  (lambda (x y)
+    (set-cursor! (+ 1 (length-of-line y)) y)
+    (current-mode 'insert)))
+
+;;; normal mode 'o' → insert on new line below
+(bind-for-mode 'normal 'o
+  (lambda (x y)
+    (call/native '(table insert) lines (+ y 1) "")
+    (set-cursor! 1 (+ y 1))
+    (current-mode 'insert)))
+
+;;; normal mode 'O' → insert on new line above
+(bind-for-mode 'normal #b100 'o
+  (lambda (x y)
+    (call/native '(table insert) lines y "")
+    (set-cursor! 1 y)
+    (redraw-text)
+    (current-mode 'insert)))
+
+;; Basic movement
+
 (bind-for-mode 'up
   (lambda (x y)
     (if (> y 1)
@@ -29,41 +89,20 @@
     (define jump-y (max 1 (+ y (inexact (/ (height) 2)))))
     (set-cursor! (min x (+ 1 (length-of-line jump-y))) jump-y)))
 
-(bind-for-mode 'normal 'i (lambda () (current-mode 'insert)))
-
-(bind-for-mode 'normal 'a
-  (lambda (x y)
-    (set-cursor! (min (+ 1 (length-of-line y)) (+ x 1)) y)
-    (current-mode 'insert)))
-
-(bind-for-mode 'normal #b100 'a
-  (lambda (x y)
-    (set-cursor! (+ 1 (length-of-line y)) y)
-    (current-mode 'insert)))
-
-(bind-for-mode 'normal 'o
-  (lambda (x y)
-    (call/native '(table insert) lines (+ y 1) "")
-    (set-cursor! 1 (+ y 1))
-    (current-mode 'insert)))
-
-(bind-for-mode 'normal #b100 'o
-  (lambda (x y)
-    (call/native '(table insert) lines y "")
-    (set-cursor! 1 y)
-    (redraw-text)
-    (current-mode 'insert)))
-
+;; C → c$
 (bind-for-mode 'normal #b100 'c
   (lambda (x y)
     (hash-set! lines y (substring (hash-ref lines y) 1 (- x 1)))
     (redraw-line y)
     (current-mode 'insert)))
 
-(bind-for-mode 'normal #b010 'c
-  (lambda (x y)
-    (status-bar-message "Use M-x (exit) to exit the editor.")))
+;; D → d$
+(bind-for-mode 'normal #b100 'c
+ (lambda (x y)
+   (hash-set! lines y (substring (hash-ref lines y) 1 (- x 1)))
+   (redraw-line y)))
 
+;; normal mode 'c' → read text object, delete, enter insert mode.
 (bind-for-mode 'normal 'c
   (lambda (x y)
     (case (get-text-object "c" x y)
@@ -79,6 +118,7 @@
        (current-mode 'insert)]
       [#f #f])))
 
+;; normal mode 'd' → read text object, delete, enter insert mode.
 (bind-for-mode 'normal 'd
   (lambda (x y)
     (case (get-text-object "d" x y)
@@ -94,6 +134,7 @@
        (redraw-line y)]
       [#f #f])))
 
+;;; insert mode CTRL-w → delete word backwards (same as normal db)
 (bind-for-mode 'insert #b010 'w
   (lambda (x y)
     (define line (hash-ref lines y))
@@ -107,20 +148,8 @@
        (redraw-line y)]
       [#f #f])))
 
-
-(bind-for-mode 'insert #b010 'c (lambda () (current-mode 'normal) #t))
-
-(bind-for-mode 'insert 'enter
-  (lambda (x y)
-    (define line (hash-ref lines y))
-    (hash-set! lines y (substring line 1 (- x 1)))
-    (call/native '(table insert)
-                 lines
-                 (+ y 1)
-                 (string-chop line x))
-    (set-cursor! 1 (+ y 1))
-    (redraw-text)))
-
+;;; insert mode backspace → delete character;
+;;; if column 1, delete line.
 (bind-for-mode 'insert 'backspace
   (lambda (x y)
     (cond
@@ -137,17 +166,19 @@
        (set-cursor! (+ 1 prevlen) (- y 1))
        (redraw-text)))))
 
-(bind-for-mode 'normal #b001 'x
+;;; insert mode enter → break line at cursor
+(bind-for-mode 'insert 'enter
   (lambda (x y)
-    (call/native '(os pullEvent) "char")
-    (define cmd
-      (with-input-from-string
-        (string-append (prompt-for-input "M-x ") " ")
-        read))
-    (catch (lambda () (status-bar-message (eval cmd ENV)))
-           (lambda e  (status-bar-message e)))
+    (define line (hash-ref lines y))
+    (hash-set! lines y (substring line 1 (- x 1)))
+    (call/native '(table insert)
+                 lines
+                 (+ y 1)
+                 (string-chop line x))
+    (set-cursor! 1 (+ y 1))
     (redraw-text)))
 
+;;; insert mode CTRL-t → indent
 (bind-for-mode 'insert #b010 't
   (lambda (x y)
     (hash-set! lines y (string-append
@@ -155,6 +186,7 @@
                          (hash-ref lines y)))
     (set-cursor! (+ x (tab-stop)) y)))
 
+;;; insert mode CTRL-d → dedent
 (bind-for-mode 'insert #b010 'd
   (lambda (x y)
     (define indent (call/native '(string rep) " " (tab-stop)))
@@ -165,6 +197,9 @@
         (set-cursor! (- x (tab-stop)) y))
       #t)))
 
+
+;;; Text-object movement keys.
+;;; Extend these in text-object.ss
 (begin
   (define (key-downcase c)
     (or (and (= c "$") "four")
