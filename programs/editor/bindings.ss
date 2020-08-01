@@ -67,7 +67,7 @@
 (bind-for-mode 'normal 'c
   (lambda (x y)
     (case (get-text-object "c" x y)
-      [(start . end)
+      [(dir start . end)
        (hash-set! lines y (string-append
                             (substring (hash-ref lines y) 0 (- start 1))
                             (string-chop (hash-ref lines y) end)))
@@ -78,7 +78,7 @@
 (bind-for-mode 'normal 'd
   (lambda (x y)
     (case (get-text-object "d" x y)
-      [(start . end)
+      [(dir start . end)
        (hash-set! lines y (string-append
                             (substring (hash-ref lines y) 0 (- start 1))
                             (string-chop (hash-ref lines y) end)))
@@ -87,17 +87,6 @@
       [#f #f])))
 
 (bind-for-mode 'insert #b010 'c (lambda () (current-mode 'normal) #t))
-
-(bind-for-mode 'insert #b010 'w
-  (lambda (x y)
-    (let ((front (substring (hash-ref lines y) 1 (- x 1)))
-          (back (string-chop (hash-ref lines y) x)))
-      (case (string-find front "%w+%s*$")
-        [(start . end)
-         (hash-set! lines y
-                    (string-append (substring front 0 (- start 1)) back))
-         (set-cursor! start y)]
-        [x #f]))))
 
 (bind-for-mode 'insert 'enter
   (lambda (x y)
@@ -154,3 +143,25 @@
         (hash-set! lines y (string-chop line (+ 1 (tab-stop))))
         (set-cursor! (- x (tab-stop)) y))
       #t)))
+
+(begin
+  (define (key-downcase c)
+    (or (and (= c "$") "four")
+        (string-downcase c)))
+
+  (hash-for-each text-object-table
+    (lambda (obj proc)
+      (define mask (if (eq? (string-upcase obj) obj) shift-mask #b000))
+      (bind-for-mode
+        'normal
+        mask
+        (string->symbol (key-downcase obj))
+        (lambda (x y)
+          (catch
+            (lambda ()
+              (define it (proc x y))
+              (if it
+                (if (= (car it) 'fore)
+                  (set-cursor! (cddr it) y)
+                  (set-cursor! (cadr it) y))))
+            (lambda e #f)))))))

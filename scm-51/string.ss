@@ -3,7 +3,8 @@
     [() ""]
     [(x) x]
     [(a b . as)
-     (apply string-append (cons (call/native '(string format) "%s%s" a b) as))]))
+     (apply string-append
+            (cons (call/native '(string format) "%s%s" a b) as))]))
 
 (define (substring s i j)
   (call/native '(string sub) s i j))
@@ -24,3 +25,6 @@
   "local start, fin = string.find(_str, _pattern)
    return start and {start,fin} or false")
 
+
+(define (string-upcase x) (call/native '(string upper) x))
+(define (string-downcase x) (call/native '(string lower) x))

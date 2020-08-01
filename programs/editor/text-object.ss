@@ -7,36 +7,54 @@
 (define (get-char-ev)
   (list (call/native '(os pullEvent) "char")))
 
-(define (word-after-point x y)
-  (case (string-find (text-after-point x y) "^%w+")
-    [(start . end) (cons x (+ x end))]
+(define text-object-table
+  (make-hash-table
+    (cons "$"
+      (lambda (x y) `(fore ,x . ,(length-of-line y))))))
+
+(define-syntax define-text-object
+  (case-lambda
+    (((name . args) . body)
+     `(define-text-object ,name (lambda ,args . ,body)))
+    ((name body)
+     `(hash-set! text-object-table ,(symbol->string name) ,body))))
+
+(define-text-object (e x y)
+  (case (string-find (text-after-point x y) "^%s*%w+")
+    [(start . end) `(fore ,x . ,(+ x end -1))]
     [#f #f]))
 
-(define (WORD-after-point x y)
-  (case (string-find (text-after-point x y) "^[^%s]+")
-    [(start . end) (cons x (+ x end))]
-    [#f #f]))
+(define-text-object (w x y)
+  (lambda (x y)
+    (case (string-find (text-after-point x y) "^%s*%w+%s*")
+      [(start . end) `(fore ,x . ,(+ x end))]
+      [#f #f])))
 
-(define (word-before-point x y)
-  (case (string-find (text-before-point x y) "%w+$")
-    [(start . end) (cons start end)]
-    [#f #f]))
+(define-text-object (W x y)
+  (lambda (x y)
+    (case (string-find (text-after-point x y) "^%s*[^%s]+%s*")
+      [(start . end) `(fore ,x . ,(+ x end))]
+      [#f #f])))
 
-(define (WORD-before-point x y)
-  (case (string-find (text-before-point x y) "[^%s]+$")
-    [(start . end) (cons start end)]
-    [#f #f]))
+(define-text-object (b x y)
+  (lambda (x y)
+    (case (string-find (text-before-point (- x 1) y) "%w+%s*$")
+      [(start . end) `(back ,start  . ,(+ 1 end))]
+      [#f #f])))
+
+(define-text-object (B x y)
+  (lambda (x y)
+    (case (string-find (text-before-point (- x 1) y) "[^%s]+%s*$")
+      [(start . end) `(back ,start  . ,(+ 1 end))]
+      [#f #f])))
 
 (define (get-text-object action x y)
   (get-char-ev)
   (define ev (get-char-ev))
   (case ev
-    [("char" "w") (word-after-point x y)]
-    [("char" "W") (WORD-after-point x y)]
-    [("char" "b") (word-before-point x y)]
-    [("char" "B") (WORD-before-point x y)]
-    [("char" "$") (cons x (+ 1 (string-length (hash-ref lines y ""))))]
     [("char" c)
-     (if (= c action)
-       (cons 1 (+ 1 (length-of-line y)))
-       #f)]))
+     (cond
+       ((= c action) (cons 1 (+ 1 (length-of-line y))))
+       ((procedure? (hash-ref text-object-table c))
+        ((hash-ref text-object-table c) x y))
+       (else #f))]))

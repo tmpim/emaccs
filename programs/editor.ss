@@ -19,7 +19,7 @@
 (define scroll (cons 0 0))
 
 (define (open-file path)
-  (if (not (modified))
+  (if (and (not (modified)) (not (eq? (buffer-name) "*scratch*")))
     (begin
       (set! lines (make-hash-table))
       (catch
@@ -105,32 +105,31 @@
   (define old-y (cdr cursor))
   (set-car! cursor new-x)
   (set-cdr! cursor new-y)
-  (define screenx (- (car cursor) (car scroll)))
-  (define screeny (- (cdr cursor) (cdr scroll)))
+  (define screenx (- new-x (car scroll)))
+  (define screeny (- new-y (cdr scroll)))
   (define redraw #f)
-
   (cond
     ((< screenx 1)
      (begin
-       (set-car! scroll (- x 1))
+       (set-car! scroll (- new-x 1))
        (set! screenx 1)
        (set! redraw #t)))
     ((> screenx (width))
      (begin
-       (set-car! scroll (- x (width)))
+       (set-car! scroll (- new-x (width)))
        (set! screenx (width))
        (set! redraw #t))))
   (cond
-   ((< screeny 1)
-    (begin
-      (set-cdr! scroll (- old-y 1))
-      (set! screeny 1)
-      (set! redraw #t)))
-   ((> screeny (- (height) 1))
-    (begin
-      (set-cdr! scroll (- old-y (- (height) 1)))
-      (set! screeny (- (height) 1))
-      (set! redraw #t))))
+    ((< screeny 1)
+     (begin
+       (set-cdr! scroll (- new-y 1))
+       (set! screeny 1)
+       (set! redraw #t)))
+    ((> screeny (- (height) 1))
+     (begin
+       (set-cdr! scroll (- new-y (- (height) 1)))
+       (set! screeny (- (height) 1))
+       (set! redraw #t))))
 
   (cond
     (redraw (redraw-text))
@@ -152,8 +151,10 @@
 
 (define key-with-mask
   (case-lambda
-    ((key) (+ (* key 8) (modifier-mask)))
-    ((key mask) (+ (* key 8) mask))))
+    (((key) #:when (number? key)) (+ (* key 8) (modifier-mask)))
+    (((key mask) #:when (and (number? key)
+                             (number? mask)))
+     (+ (* key 8) mask))))
 
 (define current-mode
   (begin
@@ -170,7 +171,9 @@
 
 (define bind-for-mode
   (case-lambda
-    ((mode mask key action)
+    (((mode mask key action) #:when (and (number? mask)
+                                         (symbol? key)
+                                         (procedure? action)))
      (hash-set! (hash-ref binding-table mode)
                 (key-with-mask (hash-ref keys (car key)) mask)
                 action))
@@ -241,8 +244,8 @@
     (term-set-text-colour (status-buffer-name-colour))
     (display " " (buffer-name))
     (let ((rhs (string-append (symbol->string (file-type))
-                              " L" (cdr cursor) "/" (line-count))))
-      (term-cursor (- -1 (width) (string-length rhs)) (height))
+                              " L" (cdr cursor))))
+      (term-cursor (- (width) (string-length rhs)) (height))
       (term-set-text-colour (status-file-type-colour))
       (term-write rhs))
     (apply term-cursor x))
@@ -256,7 +259,7 @@
       (loop (prompt-for-input (string-append p " (yes/no)"))))))
 
 (define (exit)
-  (if (modified)
+  (if (and (not (modified)) (not (eq? (buffer-name) "*scratch*")))
     (when (yes-or-no? "You have unsaved changes. Really quit?")
       (running #f))
     (running #f)))

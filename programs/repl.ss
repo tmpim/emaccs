@@ -28,7 +28,7 @@
   (hash-set! repl-key-bindings (hash-ref keys (car key)) action))
 
 (define identifier-pattern
-  "[a-zA-Z%+%-%?%!%=%>%<%*%/%%][a-zA-Z0-9%+%-%?%!%=%>%<%*%/%%]*")
+  "[a-zA-Z%+%-%?%!%=%>%<%*%/%%ç][a-zA-Z0-9%+%-%?%!%=%>%<%*%/%%ç]*")
 
 (define repl-history (make-hash-table))
 
@@ -158,11 +158,13 @@
       #t
       (apply loop (or (write-token line comment-colour    "^;.*")
                       (write-token line string-colour     "^\".-[^\\]\"")
-                      (write-ident-token line)
                       (write-token line literal-colour    "^-?[0-9/%.]+")
                       (write-token line literal-colour    "^#[tf]")
                       (write-token line string-colour     "^#\\%w+")
-                      (write-token line text-colour       "^[^%w]+")
+                      (write-token line text-colour
+                        "^[%s%(%)%{%}%[%]'`,@%/%\\~]+")
+                      (write-ident-token line)
+                      (write-token line string-colour     "^\".-[^\\]$")
                       (list "no match"))))))
 
 (define delimiters
