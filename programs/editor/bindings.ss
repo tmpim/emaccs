@@ -23,6 +23,16 @@
 ;;; normal mode 'i' → insert before cursor
 (bind-for-mode 'normal 'i (lambda () (current-mode 'insert)))
 
+;;; normal mode 's' → substitute (delete char at cursor and enter insert
+;;; mode)
+(bind-for-mode 'normal 's
+  (lambda (x y)
+    (define line (hash-ref lines y))
+    (hash-set! lines y (string-append (substring line 1 (- x 1))
+                                      (string-chop line (+ x 1))))
+    (redraw-line y)
+    (current-mode 'insert)))
+
 ;;; normal mode 'a' → insert after cursor
 (bind-for-mode 'normal 'a
   (lambda (x y)
@@ -97,7 +107,7 @@
     (current-mode 'insert)))
 
 ;; D → d$
-(bind-for-mode 'normal #b100 'c
+(bind-for-mode 'normal #b100 'd
  (lambda (x y)
    (hash-set! lines y (substring (hash-ref lines y) 1 (- x 1)))
    (redraw-line y)))
@@ -106,10 +116,11 @@
 (bind-for-mode 'normal 'c
   (lambda (x y)
     (case (get-text-object "c" x y)
-      [(line . r)
+      [('line . r)
        (hash-set! lines y "")
        (set-cursor! 1 y)
-       (redraw-line y)]
+       (redraw-line y)
+       (current-mode 'insert)]
       [(dir start . end)
        (hash-set! lines y (string-append
                             (substring (hash-ref lines y) 0 (- start 1))
@@ -122,7 +133,7 @@
 (bind-for-mode 'normal 'd
   (lambda (x y)
     (case (get-text-object "d" x y)
-      [(line . r)
+      [('line . r)
        (call/native '(table remove) lines y)
        (set-cursor! (+ 1 (length-of-line (- y 1))) (- y 1))
        (redraw-text)]

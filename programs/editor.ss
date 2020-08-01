@@ -9,11 +9,11 @@
 
 (load "/programs/editor/text-object.ss" ENV)
 
-(define running     (make-parameter #t))
-(define buffer-name (make-parameter "*scratch*"))
-(define modified    (make-parameter #f))
-(define file-type   (make-parameter 'scheme))
-(define tab-stop    (make-parameter 2))
+(define running             (make-parameter #t))
+(define buffer-name         (make-parameter "*scratch*"))
+(define modified            (make-parameter #f))
+(define file-type           (make-parameter 'scheme))
+(define tab-stop            (make-parameter 2))
 
 (define cursor (cons 1 1))
 (define scroll (cons 0 0))
@@ -103,10 +103,16 @@
 (define (set-cursor! new-x new-y)
   (define x (car cursor))
   (define old-y (cdr cursor))
+
+  (unless (= old-y new-y)
+    (set! status-refresh #t))
+
   (set-car! cursor new-x)
   (set-cdr! cursor new-y)
+
   (define screenx (- new-x (car scroll)))
   (define screeny (- new-y (cdr scroll)))
+
   (define redraw #f)
   (cond
     ((< screenx 1)
@@ -162,6 +168,7 @@
     (case-lambda
       (() mode)
       ((x) (set! status-line-block 0)
+           (set! status-refresh #t)
            (set! mode x)))))
 
 (define binding-table
@@ -174,6 +181,8 @@
     (((mode mask key action) #:when (and (number? mask)
                                          (symbol? key)
                                          (procedure? action)))
+     (unless (hash-ref keys (car key))
+       (error "no such key " key))
      (hash-set! (hash-ref binding-table mode)
                 (key-with-mask (hash-ref keys (car key)) mask)
                 action))
@@ -203,7 +212,8 @@
     [#f 0]
     [l (string-length l)]))
 
-(load "/programs/editor/bindings.ss" ENV)
+(catch (lambda () (load "/programs/editor/bindings.ss" ENV))
+       (lambda (e) (error "while loading key bindings: e")))
 
 (define prompt-for-input
   (case-lambda
@@ -224,6 +234,7 @@
 (define status-normal-mode-colour (make-parameter (hash-ref colours "lime")))
 
 (define status-line-block 0)
+(define status-refresh #t)
 
 (define (status-bar-message m)
   (set! status-line-block 5)
@@ -234,7 +245,8 @@
   (apply term-cursor x))
 
 (define (draw-status-line)
-  (when (= status-line-block 0)
+  (when (and (= status-line-block 0) status-refresh)
+    (set! status-refresh #f)
     (define x (list (term-cursor)))
 
     (term-cursor 1 (height))
