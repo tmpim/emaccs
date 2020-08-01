@@ -161,10 +161,9 @@
                       (write-token line literal-colour    "^-?[0-9/%.]+")
                       (write-token line literal-colour    "^#[tf]")
                       (write-token line string-colour     "^#\\%w+")
-                      (write-token line text-colour
-                        "^[%s%(%)%{%}%[%]'`,@%/%\\~]+")
                       (write-ident-token line)
                       (write-token line string-colour     "^\".-[^\\]$")
+                      (write-token line text-colour       "^.")
                       (list "no match"))))))
 
 (define delimiters

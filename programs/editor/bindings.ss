@@ -17,7 +17,7 @@
   (lambda (x y) (set-cursor! (min (+ 1 (length-of-line y)) (+ x 1)) y)))
 
 (bind-for-mode 'home (lambda (x y) (set-cursor! 1 y)))
-(bind-for-mode 'end (lambda (x y) (set-cursor! (length-of-line y) y)))
+(bind-for-mode 'end (lambda (x y) (set-cursor! (+ 1 (length-of-line y)) y)))
 
 (bind-for-mode 'pageUp
   (lambda (x y)
@@ -67,6 +67,10 @@
 (bind-for-mode 'normal 'c
   (lambda (x y)
     (case (get-text-object "c" x y)
+      [(line . r)
+       (hash-set! lines y "")
+       (set-cursor! 1 y)
+       (redraw-line y)]
       [(dir start . end)
        (hash-set! lines y (string-append
                             (substring (hash-ref lines y) 0 (- start 1))
@@ -78,6 +82,10 @@
 (bind-for-mode 'normal 'd
   (lambda (x y)
     (case (get-text-object "d" x y)
+      [(line . r)
+       (call/native '(table remove) lines y)
+       (set-cursor! (+ 1 (length-of-line (- y 1))) (- y 1))
+       (redraw-text)]
       [(dir start . end)
        (hash-set! lines y (string-append
                             (substring (hash-ref lines y) 0 (- start 1))
@@ -85,6 +93,20 @@
        (set-cursor! start y)
        (redraw-line y)]
       [#f #f])))
+
+(bind-for-mode 'insert #b010 'w
+  (lambda (x y)
+    (define line (hash-ref lines y))
+    (case (or (string-find (substring line 1 (- x 1)) "%s*[^%w]+%s*$")
+              (string-find (substring line 1 (- x 1)) "%s*%w+%s*$"))
+      [(start . end)
+       (hash-set! lines y (string-append
+                            (substring line 0 (- start 1))
+                            (string-chop line (+ end 1))))
+       (set-cursor! start y)
+       (redraw-line y)]
+      [#f #f])))
+
 
 (bind-for-mode 'insert #b010 'c (lambda () (current-mode 'normal) #t))
 
@@ -159,7 +181,6 @@
           (catch
             (lambda ()
               (define it (proc x y))
-              (status-bar-message it)
               (if it
                 (if (= (car it) 'fore)
                   (set-cursor! (cddr it) y)

@@ -195,7 +195,8 @@
 (define (do-mode-binding key)
   (define x (mode-has-binding key))
   (if (procedure? x)
-    (x (car cursor) (cdr cursor))))
+    (catch (lambda () (x (car cursor) (cdr cursor)))
+           (lambda (e) (status-bar-message e)))))
 
 (define (length-of-line i)
   (case (hash-ref lines i)
@@ -235,19 +236,35 @@
 (define (draw-status-line)
   (when (= status-line-block 0)
     (define x (list (term-cursor)))
+
     (term-cursor 1 (height))
     (call/native '(term clearLine))
+
     (case (current-mode)
-      ('insert (term-set-text-colour (status-insert-mode-colour)))
-      ('normal (term-set-text-colour (status-normal-mode-colour))))
-    (display (current-mode))
+      ((x #:when (symbol? x))
+       (case x
+         ('insert (term-set-text-colour (status-insert-mode-colour)))
+         ('normal (term-set-text-colour (status-normal-mode-colour))))
+       (display x))
+      (('command c)
+       (term-set-text-colour (status-normal-mode-colour))
+       (display 'command)))
+
     (term-set-text-colour (status-buffer-name-colour))
     (display " " (buffer-name))
-    (let ((rhs (string-append (symbol->string (file-type))
-                              " L" (cdr cursor))))
+
+    (let ((rhs (string-append
+                 (if (pair? (current-mode))
+                   (symbol->string (cdr (current-mode)))
+                   "")
+                 " "
+                 (symbol->string (file-type))
+                 " L"
+                 (cdr cursor))))
       (term-cursor (- (width) (string-length rhs)) (height))
       (term-set-text-colour (status-file-type-colour))
       (term-write rhs))
+
     (apply term-cursor x))
   (set! status-line-block (max 0 (- status-line-block 1))))
 
@@ -278,6 +295,15 @@
 (call/native '(table insert) lines ";;    M-x (open-file path) RET")
 (call/native '(table insert) lines "")
 (set-cursor! 1 4)
+
+(define (debug)
+  (open-tab (lambda ()
+              (let loop ((x #t))
+                (case (get-event-data)
+                  [#f #f]
+                  [ev (display ev #\newline)])
+                (loop #t)))
+            "event log"))
 
 (define (editor-main . path)
   (call/native '(term setCursorBlink) #t)
