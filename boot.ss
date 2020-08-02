@@ -1,7 +1,6 @@
 (define booting #t)
 (define (command-line) 'booting)
 
-
 (load "boot/case.ss")
 (load "boot/r5rs.ss")
 (load "boot/modules.ss")

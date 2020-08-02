@@ -17,7 +17,7 @@
     (loop (call handle "read") 0)))
 
 (define output-file     (make-parameter #f))
-(define include-runtime (make-parameter #f))
+(define include-runtime (make-parameter #t))
 (define input-files     '())
 
 (define (interp-cmdline s)
@@ -30,6 +30,8 @@
      (set! input-files (cons p input-files))
      (interp-cmdline s)]))
 
+(define booting #t)
+
 (case (command-line)
   ['booting #t] ; scmc functionality is used for booting as well.
   [(program . opts)
@@ -38,13 +40,12 @@
              (= input-files '()))
      (display "Usage: scmc -o path paths..." #\newline)
      (error))
+   (display "Compiling to " (output-file) #\newline)
    (with-output-to-file (output-file)
      (lambda ()
        (display "assert(load([==[" #\newline)
        (when (include-runtime)
-         (display "  if not _phase then" #\newline)
-         (dissect-startup-file)
-         (display "  end" #\newline))
-       (display "local function ignore(x) end" #\newline)
+         (define h (call/native '(fs open) "/scheme51.lua" "r"))
+         (display (call* h "readAll") #\newline))
        (for-each compile-file (reverse input-files))
-       (display "]==], nil, nil, setmetatable({},{__index=_ENV})))()")))])
+       (display "]==], nil, nil, setmetatable({_platform='Scheme 51'},{__index=_ENV})))()")))])
