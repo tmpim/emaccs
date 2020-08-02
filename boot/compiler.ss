@@ -1,9 +1,4 @@
-(if (and (not (eq? platform "Boot Scheme"))
-         (not (eq? platform "Scheme 51")))
-  (load "boot/case.ss"))
-
-(define (expand-for-compilation expr)
-  (expand '(let) expr))
+(define phase (make-parameter 'compiling))
 
 (define (compiler-format . args)
   (apply ((call/native 'load "return string.format")) args))
@@ -292,10 +287,13 @@
 
 (define repl
   (case-lambda
-    (() (repl #t 1 ENV))
-    ((p) (repl p 1 ENV))
-    ((p i) (repl p i ENV))
-    ((p i env)
+    (()        (repl #t 1 ENV #f))
+    ((p)       (repl p 1 ENV #f))
+    ((p i)     (repl p i ENV #f))
+    ((p i env) (repl p i env #f))
+    ((p i env #f)
+     (repl p i env (phase 'loading)))
+    ((p i env old)
      (if p
        (cond
          ((eq? platform "Boot Scheme") (display "boot> "))
@@ -303,7 +301,7 @@
          (else (display "load> "))))
      (let ((x (read)))
        (if (eq? x #eof)
-         i
+         (phase old)
          (begin
            (catch (lambda ()
                     ((if p write (lambda (x) #f))
@@ -311,7 +309,7 @@
                     (if p (newline)))
                 (lambda (e)
                   (display "Error in user code: " e #\newline)))
-           (repl p (+ 1 i) env)))))))
+           (repl p (+ 1 i) env old)))))))
 
 (define *loaded-modules* '())
 
@@ -324,7 +322,8 @@
           (display (compile-expr (lambda (x) (compiler-format "ignore(%s)" x))
                                  (expand x)))
           (loop)))))
-  (with-input-from-file path loop))
+  (parameterise ((phase 'compiling))
+    (with-input-from-file path loop)))
 
 (define eval
   (case-lambda

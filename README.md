@@ -1,136 +1,108 @@
 emaccs
 ======
 
-TBD. A startup file/text editor/window manager powered by an in-house
-Lisp implementation.
+Emaccs is many things:
+
+* A partial implementation of R5RS Scheme on Lua;
+* A modal text editor emulating Vim;
+* A tabbing window manager;
+* A complete reimplementation of CraftOS's shell in Scheme.
 
 Scheme 51
 =========
 
-A Scheme interpreter disguised as a startup file disguised as a Scheme
-interpreter. The interpreter (which is continuation-passing for no
-reason at all) can load the compiler, which can compile itself, and a
-compiler-compiled compiler is identical to an interpreter-compiled
-compiler modulo generated identifier names `#.X`.
+Scheme 51 is what emaccs is written in. Scheme 51 is a derivative of
+R5RS scheme, that supports most of the standard features except for
+what's listed here:
 
-The compiler-compiled compiler retains the compiler at runtime, which
-is used both for `(load)` and `(eval)`. Primitive module support is
-built on `(load)`.
+* Port support is basically entirely missing, but is WIP;
+* `call-with-current-continuation` will never be implemented for
+  ideological reasons
+
+Since R5RS does not _require_ complex numbers, we don't support them
+either. Rational numbers, however, are fully supported.
+
+The Scheme 51 ["runtime"](/boot/runtime.lua) consists of the mortal
+remains of the interpreter that was previously used to boot Scheme 51.
+However, the language has since progressed to the point where the
+interpreter is _not_ capable of booting the compiler! It's only kept
+alive for the implementation of the reader and some runtime support
+functions (rationals, primitives that would be unwieldy to implement in
+Scheme, etc).
 
 Booting
-=======
+-------
 
-Both the interpreted and compiled implementations initially prompt drop
-to a Scheme REPL, which loads the file `boot/boot.ss` (The compiled
-implementation has this file baked in). Commands can be written to the
-REPL on standard input, with output collected from standard output. The
-`boot.ss` Scheme file loads and compiles the necessary files to produce
-a compiled image capable of booting again.
+"Booting" is the process by which Scheme 51 loads and compiles itself.
+The boot driver was originally a shell script, but is now a Scheme file,
+`/boot.ss`.
 
-The `boot.ss` script should work on all platforms that Scheme 51
-supports, that is, Lua, LuaJIT, and ComputerCraft.
+This file can **always** create a new compiler starting from the sources
+and runtime library. Don't lose it!
 
-To boot on Linux:
-```lua
-# first time
-$ lua startup.lua < boot.ss
-# afterwards
-$ lua -l scheme51 -e 'repl()' < boot.ss
-```
+The Language
+------------
 
-The Scheme 51 System
-====================
+Scheme 51 is standard fare as far as Scheme-like languages go.
+Procedures are created with `(lambda args . body)` forms, all code is
+lists, all lists are cons lists, etc. Here are the notable differences:
 
-Compiling Scheme Code
----------------------
+### Typing
 
-Expressions can be turned into procedures using `(compile-and-load)`.
-They can be run with `(compile-and-run)`, or the shorter `(eval)`.
+Report Scheme is a dynamically typed language, and so is Scheme 51, but
+Scheme 51 is much laxer when it comes to strong typing than report
+scheme. For example, the domain of `(car)` encompasses any hash-table
+that has an entry for the number `1`, symbols, etc.
 
-**Beware**: the interpreter also supports `(eval)`, but of course, this
-won't be a fast implementation.
+### Documentation
 
-Calling Native Code
--------------------
-
-The `call/native` proc can address and call a Lua function as long as
-it's global. Both the interpreter and compiler support calling Lua
-functions as though they were Scheme procs. For example:
+In a (futile) effort to be self-documenting, Scheme 51 compiles
+procedures of the form below into a Lua table with `doc` and `args`
+fields, containing the documentation string and a quoted representation
+of the arguments respectively.
 
 ```scheme
-> (define (clear)
-    (call/native '(term clear))
-    (call/native '(term setCursorPos) 1 1))
+  (lambda args
+    "Documentation string"
+    body)
 ```
 
-The macro `run/native` supports executing Lua code directly:
+This documentation can be accessed with `documentation-for-procedure`.
+These "documented procedures" behave normally: they can be called, can
+be applied, respond #t to `procedure?`, etc.
 
-```
-> (run/native "function x() return 1 end")
-nil
-> (call/native 'x)
-1
-```
+### The module system
 
-The macro `define/native` defines a Scheme procedure with a Lua body.
+Scheme 51's implementation of `(use-modules)` tries to (running on
+ComputerCraft) pre- and re-compile files when they've changed. This
+entails some weirdness. For example, if your module has any "main" code,
+you damn better put it in a function!
 
-**Note**: The names of the procedure and all of its arguments will be
-escaped. The proc `(escape-symbol)` escapes a symbol. If the symbol
-contains no non-identifier characters, just prefix `_` and you'll be
-fine.
+The `(phase)` parameter indicates whether a module is being compiled
+(`(= (phase) 'compiling)`) or executed (`(= (phase) loading)`). Code is
+subject to run multiple times under different phases.
 
-```
-> (define/native (p x) "return print(_x)")
-> (p 1)
-1
-1
-```
+### Using the compiler
 
-Global Bindings
----------------
+The compiler presents itself with the regular Scheme interface for
+dealing with code at runtime, namely `(eval)` and `(load)`. However, it
+has some extra functionality:
 
-Bindings declared with `(define)` at top-level are dynamically, and not
-lexically, scoped. They can still be shadowed by lexical variables
-defined in an inner scope, but they will not be in the closure of any
-`(lambda x x)` expressions by default.
+* `(compile-and-load expression)` - Under the hood, this is what `(eval)` is
+implemented with. It compiles a Scheme expression to a procedure, using
+Lua's `load` function. This procedure can be stored and called any
+number of times. Instead of `(lambda () (eval e))`, try
+`(compile-and-load e)`!
 
-This means that you can redefine how the Scheme system works at runtime:
+* `(compile-file path)` - Compile a Scheme _file_ to a Lua chunk, and
+print the result to standard output. This is used for booting and
+precompiling modules.
 
-```
-> (set! compile-expr
-    (let ((old-ce compile-expr))
-      (lambda (r e)
-        (if (= e '(+ 2 2))
-          (r "5")
-          (old-ce r e)))))
-> (+ 2 2)
-5
-```
+* `(escape-symbol s)` - Turn a Scheme symbol into a string that
+represents the Lua identifier that will be used to represent that
+symbol.
 
-Compiler Behaviour
-------------------
-
-Here is a short list of things that might be modified with productive
-effect:
-
-* The **macro expander**. Change the procedure `(expand)`.
-* The **expression compiler**. Change the procedure `(compile-expr)`.
-* The **function body compiler**. Change the procedure `(compile-body)`.
-* The **symbol escaper**. Change the procedure `(escape-symbol)`.
-* The **loader**. Change the procedure `(load)`.
-
-Macro Expansion
----------------
-
-Macro expansion is carried out by a Scheme procedure, `(expand e)`,
-defined in `boot.ss`. If you change `boot.ss`, beware that macros will
-only function _after_ the definition for `(expand)` has been
-interpreted.
-
-This is **not** the case in the compiler, since that will re-use the
-host `(expand)` for its `load`s. However, it is highly preferrable for
-the boot chain not to be interrupted, so that you only need a
-`startup.lua` interpreter for the system to function.
+* `(repl)` - A simple REPL with no fanciness. Suitable for debugging.
 
 Disclaimer
 ==========

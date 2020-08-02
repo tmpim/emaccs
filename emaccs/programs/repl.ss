@@ -326,7 +326,7 @@
   (if (> i limit)
     (- limit 1) i))
 
-(define (scheme-interaction line)
+(define (scheme-interaction)
   "Run the fancy REPL."
   (set! shadow #f)
   (let ((input (interact-line)))
@@ -347,7 +347,7 @@
             [else (write e)])
           (write e))
         (display #\newline)))
-    (scheme-interaction (+ 2 line))))
+    (scheme-interaction)))
 
 (define (explain proc)
   "Nicely format and write the documentation for ,proc. ,proc must be a

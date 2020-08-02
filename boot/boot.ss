@@ -188,14 +188,18 @@
             (args (cdar macro-arguments))
             (body (cdr macro-arguments))
             (macro-args (gensym)))
-        `(push-macro! ',name
-                      ,(make-lambda
-                         (list macro-args)
-                         `((apply ,(make-lambda args body) ,macro-args)))))
+        (define push `(push-macro! ',name
+                                 ,(make-lambda
+                                    (list macro-args)
+                                    `((apply ,(make-lambda args body) ,macro-args)))))
+        (eval push)
+        push)
       (if (symbol? (car macro-arguments))
         (let ((arg (gensym)))
-          `(push-macro! ',(car macro-arguments)
-                         (lambda (,arg) (apply ,(cadr macro-arguments) ,arg))))
+          (define push `(push-macro! ',(car macro-arguments)
+                                    (lambda (,arg) (apply ,(cadr macro-arguments) ,arg))))
+          (eval push)
+          push)
         (error "bad define-syntax")))))
 
 (push-macro! 'begin (lambda (macro-arguments)
@@ -298,3 +302,16 @@
 
 (if (= platform "Scheme 51")
   (set! environment (lambda () ENV)))
+
+(define exit-error (make-hash-table))
+(define (exit-error? e) (= e exit-error))
+
+(define (exit) (error exit-error))
+
+(define (run-with-exit thunk)
+  (catch thunk
+         (lambda (e)
+           (if (and (pair? e)
+                    (exit-error? (car e)))
+             #t
+             (error e)))))

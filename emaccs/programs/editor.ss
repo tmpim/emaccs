@@ -208,7 +208,7 @@
     [#f 0]
     [l (string-length l)]))
 
-(use-modules (emaccs programs editor bindings))
+(load "/emaccs/programs/editor/bindings.ss" ENV)
 
 (define prompt-for-input
   (case-lambda

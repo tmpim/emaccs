@@ -14,6 +14,33 @@
   (define c (call* h "readAll"))
   ((call/native 'load c p "t" env)))
 
+(define do-load-module
+  (if (hash-ref (environment) "fs")
+    (lambda (path env)
+      (unless (call/native '(fs exists) path)
+        (error "no such module" path))
+      (define module-aux (string-append path ".lua"))
+      (define mod-mtime
+        (hash-ref (call/native '(fs attributes) path) "modification"))
+      (catch (lambda ()
+               (cond
+                 ((and (call/native '(fs exists) module-aux)
+                       (>= (hash-ref (call/native '(fs attributes) module-aux) "modification")
+                           mod-mtime))
+                  (dofile module-aux env))
+                 (else
+                   (with-output-to-file
+                     module-aux
+                     (lambda () (compile-file path)))
+                   (dofile module-aux env))))
+             (lambda (e)
+               (if (and (pair? e) (exit-error? (car e)))
+                 (begin
+                   (call/native '(fs delete) module-aux)
+                   (load path env))
+                 (error e)))))
+    load))
+
 (define load-mod
   (if (hash-ref ENV "fs")
     (lambda (module env)
@@ -25,7 +52,7 @@
         (hash-set! (loaded-modules) path 'loading)
         (let ((name (or (module-name) 'main)))
           (module-name module)
-          (load path env)
+          (do-load-module path env)
           (module-name name))
         (hash-set! (loaded-modules) path mtime)
         #t)
@@ -40,6 +67,7 @@
            "already loaded")]))
     (lambda (module env)
       (define path (path->string module))
+      (write path #\newline)
       (case (hash-ref (loaded-modules) path)
         ['loading (error "Cycle in module dependency graph: " module
                          " is already being loaded")]
@@ -49,12 +77,16 @@
            (module-name module)
            (load path env)
            (module-name name))
-         (hash-set! (loaded-modules) path #f)]
+         (hash-set! (loaded-modules) path #f)
+         #t]
         [#t #t]))))
 
 ; To be done: export control
 
 (define-syntax (use-module path)
+  (let ((x (run-with-exit (lambda ()
+                            (eval (load-mod path ENV))))))
+    #t)
   `(load-mod ',path ENV))
 
 (define-syntax (use-modules . mods)
@@ -63,10 +95,3 @@
     `(begin
        (use-module ,(car mods))
        (use-modules . ,(cdr mods)))))
-
-(define-syntax (compile-modules . mods)
-  (if (null? mods)
-    #t
-    `(begin
-       (compile-file ,(path->string (car mods)))
-       (compile-modules . ,(cdr mods)))))
