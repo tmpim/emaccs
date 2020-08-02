@@ -83,9 +83,14 @@
 
 ; To be done: export control
 
+
 (define-syntax (use-module path)
+  ; To be done: only do this for syntax definitions
+  ; Maybe run in a fresh environment with only 'push-macro!'?
+  (define meta-env (call/native 'setmetatable (make-hash-table) (make-hash-table (cons "__index" ENV))))
   (let ((x (run-with-exit (lambda ()
-                            (eval (load-mod path ENV))))))
+                            (eval (load-mod path meta-env))
+                            (hash-set! (loaded-modules) (path->string path) #f)))))
     #t)
   `(load-mod ',path ENV))
 
