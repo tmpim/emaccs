@@ -29,8 +29,16 @@
 
 (define (tab-count) (call/native '(table getn) active-tabs))
 
+(define title
+  (case-lambda
+    (() (hash-ref (active-tab) "title"))
+    ((x)
+     (hash-set! (active-tab) "title" x)
+     (draw-tab-line))))
+
 (define (draw-tab-line)
   (define x (call* native-terminal "getCursorBlink"))
+  (define c (list (call* native-terminal "getCursorPos")))
   (call* native-terminal "setCursorBlink" #f)
   (call* native-terminal "setCursorPos" 1 (native-height))
   (call* native-terminal "clearLine")
@@ -43,23 +51,25 @@
                                (call* native-terminal "setTextColour" 1)))
   (call* native-terminal "setCursorBlink" x))
 
-(define (make-environment)
-  (define env (make-hash-table `("_tab" ,(tab-count))))
+(define (make-environment cmd-line)
   (call/native 'setmetatable
-               env
-               (make-hash-table
-                 (cons "__index" (environment))))
-  env)
+    (make-hash-table
+      (cons (escape-symbol 'command-line)   (lambda () cmd-line)))
+    (make-hash-table
+      (cons "__index" ENV))))
 
 (define open-tab
   (case-lambda
-    (() (open-tab "/programs/repl.ss" "scheme"))
+    (() (open-tab "/emaccs/programs/shell.ss" "shell"))
     (((path) #:when (string? path))
      (open-tab path path))
     (((path title) #:when (string? path))
      (open-tab (make-environment) path title))
     (((env path title) #:when (string? path))
-     (open-tab (lambda () (load path env) (close-tab)) title))
+     (open-tab (lambda () (loaded-modules (make-hash-table))
+                          (load path env)
+                          (close-tab))
+               title))
     (((proc title) #:when (procedure? proc))
      (define thread (coroutine-create proc))
      (define window
@@ -88,18 +98,6 @@
               (cons (hash-ref keys "leftAlt") "meta")
               (cons (hash-ref keys "rightAlt") "meta"))
             k))
-
-(define edit
-  (case-lambda
-    [() (open-tab (make-environment) "/programs/editor.ss" "editor")]
-    [(path)
-     (define env (make-environment))
-     (open-tab
-       (lambda ()
-         (parameterise ((module-name 'editor))
-           (load "/programs/editor.ss" env))
-         ((hash-ref env (escape-symbol 'editor-main)) path))
-       path)]))
 
 (define (held? s)
   (hash-ref held (car s)))
@@ -193,6 +191,8 @@
       [("terminate") (resume ev)]
       [else (resume* ev)])
     (loop (list (call/native '(os pullEventRaw))))))
+
+(define (command-line) "You shouldn't see this definition." #f)
 
 (open-tab)
 

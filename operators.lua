@@ -101,7 +101,7 @@ function _apply(f, t)
   end
   local r = table.pack(pcall(f, unpack(args, 1, n)))
   if not r[1] then
-    error(err[2], 2)
+    error(r[2], 2)
   else
     return table.unpack(r, 2, r.n)
   end

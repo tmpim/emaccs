@@ -2,7 +2,7 @@
              (scm-51 input)
              (scm-51 control)
 
-             (emaccs gap-buffer)
+             (emaccs programs repl gap-buffer)
              (emaccs terminal))
 
 (define (get-event-data)
@@ -31,21 +31,6 @@
   "[a-zA-Z%+%-%?%!%=%>%<%*%/%%ç][a-zA-Z0-9%+%-%?%!%=%>%<%*%/%%ç]*")
 
 (define repl-history (make-hash-table))
-
-(define held (make-hash-table '("shift" . #f) '("meta" . #f) '("control" . #f)))
-
-(define (modifier? k)
-  (hash-ref (make-hash-table
-              (cons (hash-ref keys "leftShift") "shift")
-              (cons (hash-ref keys "rightShift") "shift")
-              (cons (hash-ref keys "leftCtrl") "control")
-              (cons (hash-ref keys "rightCtrl") "control")
-              (cons (hash-ref keys "leftAlt") "meta")
-              (cons (hash-ref keys "rightAlt") "meta"))
-            k))
-
-(define (held? s)
-  (hash-ref held (car s)))
 
 (define shadow #f)
 
@@ -252,10 +237,6 @@
          (term-write ch))
        (refresh-editor-shadow buffer)
        (loop (get-event-data))]
-      [("key_up" key)
-       (if (modifier? key)
-         (hash-set! held (modifier? key) #f))
-       (loop (get-event-data))]
       [("key" key ignored)
        (cond
          ((= key (hash-ref keys "enter"))
@@ -263,9 +244,6 @@
           (set! shadow #f)        ; Dismiss the shadow
           (set! needs-repaint #t) ; Repaint the editor
           (loop 'exit))           ; and draw one last time so it actually goes away
-         ((modifier? key)
-          (hash-set! held (modifier? key) #t)
-          (loop (get-event-data)))
          ((hash-ref repl-key-bindings key)
           (set! needs-repaint #t)
           (set! buffer ((hash-ref repl-key-bindings key) buffer))

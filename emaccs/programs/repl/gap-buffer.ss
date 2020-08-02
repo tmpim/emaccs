@@ -39,7 +39,8 @@
   (cons (string-append (car buf) (cdr buf)) ""))
 
 (define (gap-buffer-kill-backwards buf)
-  (case (string-find (car buf) "%w+%s*$")
+  (case (or (string-find (car buf) "%s*[^%w]+%s*$")
+            (string-find (car buf) "%s*%w+%s*$"))
     [(start . end)
      (cons (substring (car buf) 0 (- start 1)) (cdr buf))]
     [false buf]))

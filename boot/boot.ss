@@ -222,8 +222,9 @@
       (if (null? args)
         cell
         (begin
+          (define old cell)
           (set! cell (car args))
-          cell)))))
+          old)))))
 
 (define-syntax (parameterise vars . body)
   (if (null? vars)

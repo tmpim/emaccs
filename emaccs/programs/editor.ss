@@ -1,13 +1,9 @@
-(use-modules (scm-51 string)
-             (scm-51 input)
-
-             (emaccs terminal)
-             (programs repl))
+(use-modules (scm-51 string) (scm-51 input) (emaccs terminal) (emaccs programs repl))
 
 (define lines        (make-hash-table))
 (define (line-count) (call/native '(table getn) lines))
 
-(load "/programs/editor/text-object.ss" ENV)
+(use-module (emaccs programs editor text-object))
 
 (define running             (make-parameter #t))
 (define buffer-name         (make-parameter "*scratch*"))
@@ -28,9 +24,9 @@
           (let loop ((n 1))
             (case (catch (lambda () (define x (call* h "readLine")) x)
                          (lambda () #f))
-              ((x #:when (string? x))
+              [(x #:when (string? x))
                (call/native '(table insert) lines x)
-               (loop #f))
+               (loop #f)]
               [e (buffer-name path)
                  (modified #f)
                  (if (= ".ss" (string-chop path -3))
@@ -58,11 +54,11 @@
            (if (> i lno)
              (call* h "close")
              (begin
-               (call* h "writeLine" (hash-ref lines i))
+               (call* h "writeLine" (hash-ref lines i ""))
                (loop (+ 1 i))))))
        (lambda (e) (error e))))
     (()
-     (unless (= (string-ref (buffer-name 1)) "*")
+     (unless (= (string-ref (buffer-name) 1) "*")
        (save-file (buffer-name))))))
 
 (define (write-line l)
@@ -212,8 +208,7 @@
     [#f 0]
     [l (string-length l)]))
 
-(catch (lambda () (load "/programs/editor/bindings.ss" ENV))
-       (lambda (e) (error "while loading key bindings: e")))
+(use-modules (emaccs programs editor bindings))
 
 (define prompt-for-input
   (case-lambda
@@ -236,13 +231,16 @@
 (define status-line-block 0)
 (define status-refresh #t)
 
-(define (status-bar-message m)
-  (set! status-line-block 5)
-  (define x (list (term-cursor)))
-  (term-cursor 1 (height))
-  (call/native '(term clearLine))
-  (display m)
-  (apply term-cursor x))
+(define status-bar-message
+  (case-lambda
+    (() #t)
+    ((m)
+     (set! status-line-block 5)
+     (define x (list (term-cursor)))
+     (term-cursor 1 (height))
+     (call/native '(term clearLine))
+     (display m)
+     (apply term-cursor x))))
 
 (define (draw-status-line)
   (when (and (= status-line-block 0) status-refresh)
@@ -302,12 +300,6 @@
               (close-tab))
             "pager"))
 
-(call/native '(table insert) lines ";; This buffer is for text that is not saved.")
-(call/native '(table insert) lines ";; To edit a file, visit it with")
-(call/native '(table insert) lines ";;    M-x (open-file path) RET")
-(call/native '(table insert) lines "")
-(set-cursor! 1 4)
-
 (define (debug)
   (open-tab (lambda ()
               (let loop ((x #t))
@@ -321,34 +313,45 @@
   (call/native '(term setCursorBlink) #t)
   (call/native '(term clear))
   (if (not (null? path))
-    (open-file (car path)))
+    (open-file (car path))
+    (begin
+      (call/native '(table insert) lines ";; This buffer is for text that is not saved.")
+      (call/native '(table insert) lines ";; To edit a file, visit it with")
+      (call/native '(table insert) lines ";;    M-x (open-file path) RET")
+      (call/native '(table insert) lines "")
+      (set-cursor! 1 4)))
+
   (redraw-text)
   (let loop ((ev (get-event-data)) (ignore #f))
     (cond
+      (ignore (loop (get-event-data) #f))
       ((running)
        (draw-status-line)
-       (if ignore
-         (loop (get-event-data) #f)
-         (case ev
-           [("key" k held)
-            (cond
-              [(mode-has-binding k)
-               (do-mode-binding k)
-               (loop (get-event-data) #t)]
-              [else (loop (get-event-data) #f)])] 
-           [(("char" k) #:when (= (current-mode) 'insert))
-            (modified #t)
-            (apply-to-line (lambda (x y line)
-                             (string-append
-                               (substring line 1 (- x 1))
-                               k
-                               (string-chop line x))))
-            (set-cursor! (+ 1 (car cursor)) (cdr cursor))
-            (loop (get-event-data) #f)]
-           [else (loop (get-event-data) #f)])))
+       (case ev
+         [("key" k repeat)
+          (cond
+            [(mode-has-binding k)
+             (do-mode-binding k)
+             (loop (get-event-data) #t)]
+            [else (loop (get-event-data) #f)])] 
+         [(("char" k) #:when (= (current-mode) 'insert))
+          (modified #t)
+          (apply-to-line (lambda (x y line)
+                           (string-append
+                             (substring line 1 (- x 1))
+                             k
+                             (string-chop line x))))
+          (set-cursor! (+ 1 (car cursor)) (cdr cursor))
+          (loop (get-event-data) #f)]
+         [else (loop (get-event-data) #f)]))
       (else
         (term-clear)
         (term-cursor 1 1)))))
 
 (when (= (module-name) 'main)
-  (editor-main))
+  (case (command-line)
+    [(editor path)
+     (buffer-name path)
+     (editor-main path)]
+    [(editor) (editor-main)]
+    [#f (editor-main)]))

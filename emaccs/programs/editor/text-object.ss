@@ -71,8 +71,11 @@
 (define (get-text-object action x y)
   (parameterise ((current-mode `(command ,action)))
     (draw-status-line)
-    (get-char-ev)
-    (define ev (get-char-ev))
+    (define ev
+      (let ((first (get-char-ev)))
+        (if (= (cadr first) action)
+          (get-char-ev)
+          first)))
     (case ev
       [("char" c)
        (cond
