@@ -4058,12 +4058,10 @@ ignore((function(_S35S46892)
  end)(_hashS45ref(var(_ENV, "ENV"),  "fs" ));
  ignore(_loadS45mod)ignore(_pushS45macroS33(symbol('use-module'),  (function(_S35S461823  )
  return var(_apply, "apply")((function(_path  )
- local _metaS45env;
- _metaS45env = _callS47native(symbol('setmetatable'),  _makeS45hashS45table(),  _makeS45hashS45table({"__index", _ENV} ) );
  (function(_x  )
  return true
  end)(_runS45withS45exit((function()
- _eval(_loadS45mod(var(_path, "path"),  var(_metaS45env, "meta-env") ) );
+ _eval(_loadS45mod(var(_path, "path"),  _ENV ) );
  return _hashS45setS33(_loadedS45modules(),  _pathS45S62string(_path ),  false )
  end) ) );
  return {symbol('load-mod'), {{symbol('quote'), {var(_path, "path"), scm_nil}}, {symbol('ENV'), scm_nil}}}
