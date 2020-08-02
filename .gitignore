@@ -1,3 +1,4 @@
-scheme51.lua
 compiler.lua
 **/*.lua
+!scheme51.lua
+!boot/runtime.lua
