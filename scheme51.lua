@@ -738,7 +738,7 @@ function _apply(f, t)
     args[i] = t[1]
     i, n, t = i + 1, n + 1, t[2]
   end
-  local r = table.pack(pcall(f, unpack(args, 1, n)))
+  local r = table.pack(pcall(f, table.unpack(args, 1, n)))
   if not r[1] then
     error(r[2], 2)
   else
@@ -861,7 +861,6 @@ function _S60S61(...)
     return true
   end
 end
-
 
 function var(x, n)
       if x ~= nil then return x end
