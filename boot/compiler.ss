@@ -315,6 +315,10 @@
 
 (define (compile-file path)
   (define (loop)
+    (if (hash-ref (environment) "term")
+      (call/native '(sleep) 0.2)
+      #t)
+
     (let ((x (read)))
       (if (eq? x #eof)
         #t
